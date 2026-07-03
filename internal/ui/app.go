@@ -41,6 +41,7 @@ type App struct {
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
 	err            error
+	inFlight       bool // a poll cmd is outstanding; skip re-issuing until it returns
 }
 
 // NewApp builds the sidebar model. focusReturnCmd, when non-empty, runs
@@ -49,7 +50,10 @@ func NewApp(deps poller.Deps, focusReturnCmd string) *App {
 	return &App{deps: deps, focusReturnCmd: focusReturnCmd, fold: true}
 }
 
-func (a *App) Init() tea.Cmd { return tea.Batch(a.poll(), tick()) }
+func (a *App) Init() tea.Cmd {
+	a.inFlight = true
+	return tea.Batch(a.poll(), tick())
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -70,10 +74,18 @@ func (a *App) poll() tea.Cmd {
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tickMsg:
-		return a, tea.Batch(a.poll(), tick())
+		cmds := []tea.Cmd{tick()}
+		if !a.inFlight {
+			a.inFlight = true
+			cmds = append(cmds, a.poll())
+		}
+		return a, tea.Batch(cmds...)
 	case snapMsg:
+		a.inFlight = false
 		a.err = m.err
-		if m.err == nil {
+		// GeneratedAt check is belt-and-braces against reordering if the
+		// in-flight guard is ever removed.
+		if m.err == nil && !m.snap.GeneratedAt.Before(a.snap.GeneratedAt) {
 			a.snap = m.snap
 		}
 		return a, nil
