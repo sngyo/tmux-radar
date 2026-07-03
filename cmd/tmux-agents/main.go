@@ -7,8 +7,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/sngyo/tmux-agents/internal/attention"
 	"github.com/sngyo/tmux-agents/internal/poller"
 	"github.com/sngyo/tmux-agents/internal/state"
+	tmuxpkg "github.com/sngyo/tmux-agents/internal/tmux"
 )
 
 const version = "0.1.0-dev"
@@ -31,7 +33,9 @@ func run(args []string, stdout io.Writer) int {
 		return cmdSummary(stdout)
 	case "watch":
 		return cmdWatch(stdout)
-	case "sidebar", "jump":
+	case "jump":
+		return cmdJump()
+	case "sidebar":
 		fmt.Fprintf(stdout, "%s: not implemented yet\n", cmd)
 		return 1
 	default:
@@ -67,4 +71,30 @@ func cmdWatch(stdout io.Writer) int {
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+// cmdJump moves the tmux client to the next agent needing attention.
+// Stale state (sidebar/watch not running) triggers one inline poll.
+func cmdJump() int {
+	now := time.Now()
+	snap, err := state.Load(state.DefaultPath())
+	if err != nil || snap.Stale(now, 3*time.Second) {
+		snap, err = poller.RunOnce(state.Snapshot{}, poller.DefaultDeps(), now)
+		if err != nil {
+			_ = tmuxpkg.DisplayMessage("tmux-agents: " + err.Error())
+			return 1
+		}
+	}
+	queue := attention.Queue(snap.Agents, now)
+	current, _ := tmuxpkg.CurrentPaneID()
+	target, ok := attention.Next(queue, current)
+	if !ok {
+		_ = tmuxpkg.DisplayMessage("tmux-agents: nothing needs attention")
+		return 0
+	}
+	if err := tmuxpkg.JumpTo(target.Session, target.WindowIndex, target.PaneID); err != nil {
+		_ = tmuxpkg.DisplayMessage("tmux-agents: jump failed: " + err.Error())
+		return 1
+	}
+	return 0
 }

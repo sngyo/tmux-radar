@@ -60,3 +60,28 @@ func CapturePane(paneID string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// CurrentPaneID returns the active pane id of the current client.
+func CurrentPaneID() (string, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "#{pane_id}").Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux display-message: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// JumpTo focuses a pane across sessions: switch client, select window,
+// select pane — chained in a single tmux invocation.
+func JumpTo(session string, windowIndex int, paneID string) error {
+	target := fmt.Sprintf("%s:%d", session, windowIndex)
+	return exec.Command("tmux",
+		"switch-client", "-t", session, ";",
+		"select-window", "-t", target, ";",
+		"select-pane", "-t", paneID,
+	).Run()
+}
+
+// DisplayMessage shows a transient message in the tmux status line.
+func DisplayMessage(msg string) error {
+	return exec.Command("tmux", "display-message", msg).Run()
+}
