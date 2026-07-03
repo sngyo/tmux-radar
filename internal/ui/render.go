@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/sngyo/tmux-agents/internal/state"
 )
 
@@ -51,7 +53,7 @@ var icons = map[state.Display]string{
 // session → window index → pane index, hidden windows folded at the bottom.
 func Render(v ViewData) []Row {
 	agents := append([]state.Agent(nil), v.Agents...)
-	sort.Slice(agents, func(i, j int) bool {
+	sort.SliceStable(agents, func(i, j int) bool {
 		a, b := agents[i], agents[j]
 		if a.Session != b.Session {
 			return a.Session < b.Session
@@ -121,15 +123,16 @@ func agentRows(agents []state.Agent, now time.Time) []Row {
 	lastSession := ""
 	prevWindow := ""
 	for _, a := range agents {
-		if a.Session != lastSession {
-			rows = append(rows, Row{Text: "─ " + a.Session + " ", Kind: RowGroup})
-			lastSession = a.Session
+		session := sanitize(a.Session)
+		if session != lastSession {
+			rows = append(rows, Row{Text: "─ " + truncate(session, 24) + " ", Kind: RowGroup})
+			lastSession = session
 			prevWindow = ""
 		}
-		windowKey := fmt.Sprintf("%s:%d", a.Session, a.WindowIndex)
-		label := a.WindowName
+		windowKey := fmt.Sprintf("%s:%d", session, a.WindowIndex)
+		label := sanitize(a.WindowName)
 		if windowKey == prevWindow {
-			title := a.PaneTitle
+			title := sanitize(a.PaneTitle)
 			if title == "" {
 				title = fmt.Sprintf("pane %d", a.PaneIndex)
 			}
@@ -138,20 +141,45 @@ func agentRows(agents []state.Agent, now time.Time) []Row {
 		prevWindow = windowKey
 		disp := a.Display(now)
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("%s %-14s %2d.%d %5s",
-				icons[disp], truncate(label, 14), a.WindowIndex, a.PaneIndex, age(now.Sub(a.Since))),
+			Text: fmt.Sprintf("%s %s %2d.%d %5s",
+				icons[disp], pad(truncate(label, 14), 14), a.WindowIndex, a.PaneIndex, age(now.Sub(a.Since))),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID,
 		})
 	}
 	return rows
 }
 
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
+// sanitize removes control runes so a row can never span screen lines.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// pad right-pads s with spaces to the given terminal display width.
+func pad(s string, w int) string {
+	if d := w - lipgloss.Width(s); d > 0 {
+		return s + strings.Repeat(" ", d)
+	}
+	return s
+}
+
+// truncate cuts s to at most w terminal columns, ellipsizing when needed.
+func truncate(s string, w int) string {
+	if lipgloss.Width(s) <= w {
 		return s
 	}
-	return string(r[:n-1]) + "…"
+	var b strings.Builder
+	for _, r := range s {
+		if lipgloss.Width(b.String()+string(r)) > w-1 {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + "…"
 }
 
 // age formats a duration compactly: 45s, 12m, 3h.

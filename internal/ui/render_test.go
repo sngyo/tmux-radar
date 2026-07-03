@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/sngyo/tmux-agents/internal/detect"
 	"github.com/sngyo/tmux-agents/internal/state"
 )
@@ -98,6 +100,37 @@ func TestRenderAgeColumn(t *testing.T) {
 	for _, r := range rows {
 		if r.PaneID == "%api" && !strings.Contains(r.Text, "12m") {
 			t.Errorf("row %q should contain age 12m", r.Text)
+		}
+	}
+}
+
+func TestRenderWideCharColumnsAlign(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 1, "api", 1, "", detect.Working, t0),
+		mk("main", 2, "日本語の長いウィンドウ名テスト", 1, "", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	var widths []int
+	for _, r := range rows {
+		if r.Kind == RowAgent {
+			widths = append(widths, lipgloss.Width(r.Text))
+		}
+	}
+	if len(widths) != 2 || widths[0] != widths[1] {
+		t.Errorf("agent row display widths differ: %v", widths)
+	}
+}
+
+func TestRenderSanitizesControlChars(t *testing.T) {
+	// mk's 5th arg (pane title) only surfaces on a window's 2nd+ pane, so a
+	// title on the first pane wouldn't exercise the sanitizer. Put both
+	// control chars in the window name instead so they both go through the
+	// window-name path.
+	agents := []state.Agent{mk("main", 1, "bad\tname\n", 1, "", detect.Working, t0)}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	for _, r := range rows {
+		if strings.ContainsAny(r.Text, "\n\t\r") {
+			t.Errorf("row text contains control chars: %q", r.Text)
 		}
 	}
 }
