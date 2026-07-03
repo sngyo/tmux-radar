@@ -2,7 +2,7 @@
 package poller
 
 import (
-	"slices"
+	"regexp"
 	"time"
 
 	"github.com/sngyo/tmux-agents/internal/detect"
@@ -12,21 +12,26 @@ import (
 
 // Deps are the injectable dependencies of a poll tick.
 type Deps struct {
-	ListPanes    func() ([]tmux.Pane, error)
-	Capture      func(paneID string) (string, error)
-	Rules        detect.Rules
-	ProcessNames []string
-	DoneTTL      time.Duration
+	ListPanes       func() ([]tmux.Pane, error)
+	Capture         func(paneID string) (string, error)
+	Rules           detect.Rules
+	ProcessPatterns []*regexp.Regexp // matched against pane_current_command
+	DoneTTL         time.Duration
 }
 
 // DefaultDeps returns production dependencies (real tmux, default rules).
+// Claude Code's auto-updater installs version-named binaries (e.g. "2.1.199"),
+// so the defaults match both the plain name and a bare version string.
 func DefaultDeps() Deps {
 	return Deps{
-		ListPanes:    tmux.ListPanes,
-		Capture:      tmux.CapturePane,
-		Rules:        detect.DefaultRules(),
-		ProcessNames: []string{"claude"},
-		DoneTTL:      10 * time.Minute,
+		ListPanes: tmux.ListPanes,
+		Capture:   tmux.CapturePane,
+		Rules:     detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{
+			regexp.MustCompile(`^claude$`),
+			regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`),
+		},
+		DoneTTL: 10 * time.Minute,
 	}
 }
 
@@ -39,7 +44,7 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 	}
 	var obs []state.Observation
 	for _, p := range panes {
-		if !slices.Contains(d.ProcessNames, p.Command) {
+		if !matches(d.ProcessPatterns, p.Command) {
 			continue
 		}
 		screen, err := d.Capture(p.ID)
@@ -51,4 +56,13 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		})
 	}
 	return state.Apply(prev, obs, now, d.DoneTTL), nil
+}
+
+func matches(patterns []*regexp.Regexp, command string) bool {
+	for _, re := range patterns {
+		if re.MatchString(command) {
+			return true
+		}
+	}
+	return false
 }

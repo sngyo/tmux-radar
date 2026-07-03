@@ -2,6 +2,7 @@ package poller
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -23,9 +24,9 @@ func TestRunOnceFiltersAndDetects(t *testing.T) {
 		Capture: func(paneID string) (string, error) {
 			return "✶ Cerebrating… (esc to interrupt)", nil
 		},
-		Rules:        detect.DefaultRules(),
-		ProcessNames: []string{"claude"},
-		DoneTTL:      10 * time.Minute,
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		DoneTTL:         10 * time.Minute,
 	}
 	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
 	s, err := RunOnce(state.Snapshot{}, d, now)
@@ -48,9 +49,9 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 		Capture: func(string) (string, error) {
 			return "", errPaneGone
 		},
-		Rules:        detect.DefaultRules(),
-		ProcessNames: []string{"claude"},
-		DoneTTL:      10 * time.Minute,
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		DoneTTL:         10 * time.Minute,
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -58,5 +59,17 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 	}
 	if len(s.Agents) != 0 {
 		t.Errorf("agents = %d, want 0", len(s.Agents))
+	}
+}
+
+func TestDefaultPatternsMatchVersionedClaudeBinary(t *testing.T) {
+	pats := DefaultDeps().ProcessPatterns
+	for _, cmd := range []string{"claude", "2.1.185"} {
+		if !matches(pats, cmd) {
+			t.Errorf("%q should match default patterns", cmd)
+		}
+	}
+	if matches(pats, "zsh") {
+		t.Error("zsh must not match default patterns")
 	}
 }
