@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/sngyo/tmux-agents/internal/poller"
 	"github.com/sngyo/tmux-agents/internal/state"
 )
 
@@ -28,7 +29,9 @@ func run(args []string, stdout io.Writer) int {
 		return 0
 	case "summary":
 		return cmdSummary(stdout)
-	case "sidebar", "jump", "watch":
+	case "watch":
+		return cmdWatch(stdout)
+	case "sidebar", "jump":
 		fmt.Fprintf(stdout, "%s: not implemented yet\n", cmd)
 		return 1
 	default:
@@ -44,4 +47,24 @@ func cmdSummary(stdout io.Writer) int {
 	}
 	fmt.Fprint(stdout, state.Summary(s, time.Now(), 3*time.Second))
 	return 0
+}
+
+// cmdWatch runs the poller headlessly (P1 usage and debugging).
+func cmdWatch(stdout io.Writer) int {
+	deps := poller.DefaultDeps()
+	path := state.DefaultPath()
+	var snap state.Snapshot
+	fmt.Fprintf(stdout, "watching; writing %s (ctrl-c to stop)\n", path)
+	for {
+		next, err := poller.RunOnce(snap, deps, time.Now())
+		if err != nil {
+			fmt.Fprintf(stdout, "poll error: %v\n", err)
+		} else {
+			snap = next
+			if err := state.Save(path, snap); err != nil {
+				fmt.Fprintf(stdout, "save error: %v\n", err)
+			}
+		}
+		time.Sleep(time.Second)
+	}
 }
