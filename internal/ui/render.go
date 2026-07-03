@@ -117,8 +117,9 @@ func Render(v ViewData) []Row {
 	return rows
 }
 
-// agentRows emits group headers per session and one row per agent;
-// a window's 2nd+ pane hangs with "└" and its pane title when set.
+// agentRows emits group headers per session and one row per agent.
+// A window's first row reads like the tmux window list ("17:name");
+// its 2nd+ panes hang below with "└" and their pane title, no index.
 func agentRows(agents []state.Agent, now time.Time) []Row {
 	var rows []Row
 	lastSession := ""
@@ -132,18 +133,20 @@ func agentRows(agents []state.Agent, now time.Time) []Row {
 		}
 		windowKey := fmt.Sprintf("%s:%d", session, a.WindowIndex)
 		label := sanitize(a.WindowName)
+		ref := fmt.Sprintf("%d:", a.WindowIndex)
 		if windowKey == prevWindow {
 			title := sanitize(a.PaneTitle)
 			if title == "" {
 				title = fmt.Sprintf("pane %d", a.PaneIndex)
 			}
 			label = "└ " + title
+			ref = "" // window index already shown on the window's first row
 		}
 		prevWindow = windowKey
 		disp := a.Display(now)
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("%s %s %2d.%d %5s",
-				icons[disp], pad(truncate(label, 14), 14), a.WindowIndex, a.PaneIndex, age(now.Sub(a.Since))),
+			Text: fmt.Sprintf("%s %3s%s %5s",
+				icons[disp], ref, pad(truncate(label, 16), 16), age(now.Sub(a.Since))),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID,
 		})
 	}

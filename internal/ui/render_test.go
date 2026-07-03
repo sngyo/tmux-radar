@@ -37,6 +37,31 @@ func kinds(rows []Row) []RowKind {
 	return ks
 }
 
+func TestRenderWindowRefLeadsAndOmitsPaneIndex(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	firstRowHasPrefix := false
+	for _, r := range rows {
+		if r.Kind != RowAgent {
+			continue
+		}
+		// pane-index refs like "12.1" must be gone
+		if strings.Contains(r.Text, "12.1") || strings.Contains(r.Text, "14.2") {
+			t.Errorf("row %q must not contain pane-index refs", r.Text)
+		}
+		// a window's first row leads with the tmux-style "12:" prefix
+		if r.PaneID == "%api" && strings.Contains(r.Text, "12:api") {
+			firstRowHasPrefix = true
+		}
+		// hanging sub-rows carry no window index
+		if strings.Contains(r.Text, "└") && strings.Contains(r.Text, "14:") {
+			t.Errorf("sub-row %q must not repeat the window index", r.Text)
+		}
+	}
+	if !firstRowHasPrefix {
+		t.Error(`window 12's first row should read "12:api"`)
+	}
+}
+
 func TestRenderStructure(t *testing.T) {
 	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
 	// header, alert (1 blocked), group main, 3 agents, group mon, 1 agent, fold, footer
