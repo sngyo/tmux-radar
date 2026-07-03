@@ -23,8 +23,10 @@ type AgentRules struct {
 
 // Config mirrors config.toml. Zero values are replaced by Default().
 type Config struct {
-	PollIntervalMS int                   `toml:"poll_interval_ms"`
-	DoneTTLMin     int                   `toml:"done_ttl_min"`
+	PollIntervalMS int `toml:"poll_interval_ms"`
+	DoneTTLMin     int `toml:"done_ttl_min"`
+	// HiddenPrefix folds windows whose name starts with it; explicitly
+	// setting "" disables folding (kept verbatim, not defaulted).
 	HiddenPrefix   string                `toml:"hidden_prefix"`
 	FocusReturnCmd string                `toml:"focus_return_cmd"`
 	Agents         map[string]AgentRules `toml:"agents"`
@@ -79,6 +81,26 @@ func Load(path string) (Config, error) {
 	}
 	if len(c.Agents) == 0 {
 		c.Agents = Default().Agents
+	}
+	// Field-level defaulting: TOML decoding replaces a re-declared agent
+	// table wholesale, so an entry like [agents.claude] overriding only
+	// `blocked` would otherwise silently drop the default process_names and
+	// working patterns (and with them, all pane matching).
+	for k, d := range Default().Agents {
+		a, ok := c.Agents[k]
+		if !ok {
+			continue
+		}
+		if len(a.ProcessNames) == 0 {
+			a.ProcessNames = d.ProcessNames
+		}
+		if len(a.Working) == 0 {
+			a.Working = d.Working
+		}
+		if len(a.Blocked) == 0 {
+			a.Blocked = d.Blocked
+		}
+		c.Agents[k] = a
 	}
 	return c, nil
 }

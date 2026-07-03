@@ -81,3 +81,25 @@ blocked = ['(unclosed']
 		t.Error("invalid regex must error")
 	}
 }
+
+func TestLoadPartialAgentOverrideInheritsDefaults(t *testing.T) {
+	p := write(t, `
+[agents.claude]
+blocked = ['custom pattern']
+`)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := c.Agents["claude"]
+	d := Default().Agents["claude"]
+	if len(a.ProcessNames) == 0 || a.ProcessNames[0] != d.ProcessNames[0] {
+		t.Errorf("process_names not inherited: %+v", a.ProcessNames)
+	}
+	if len(a.Working) == 0 || a.Working[0] != d.Working[0] {
+		t.Errorf("working not inherited: %+v", a.Working)
+	}
+	if len(a.Blocked) != 1 || a.Blocked[0] != "custom pattern" {
+		t.Errorf("blocked override lost: %+v", a.Blocked)
+	}
+}

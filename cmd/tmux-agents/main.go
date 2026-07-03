@@ -58,10 +58,13 @@ func cmdSummary(stdout io.Writer) int {
 
 // cmdWatch runs the poller headlessly (P1 usage and debugging).
 func cmdWatch(stdout io.Writer) int {
-	cfg, _ := config.Load(config.DefaultConfigPath())
+	cfg, cfgErr := config.Load(config.DefaultConfigPath())
 	deps, err := cfg.PollerDeps()
 	if err != nil {
 		deps = poller.DefaultDeps() // bad regex in config: fall back
+	}
+	if w := firstNonNil(cfgErr, err); w != nil {
+		fmt.Fprintf(stdout, "config warning: %v (using defaults)\n", w)
 	}
 	path := state.DefaultPath()
 	var snap state.Snapshot
@@ -84,10 +87,13 @@ func cmdWatch(stdout io.Writer) int {
 // Stale state (sidebar/watch not running) triggers one inline poll.
 func cmdJump() int {
 	now := time.Now()
-	cfg, _ := config.Load(config.DefaultConfigPath())
+	cfg, cfgErr := config.Load(config.DefaultConfigPath())
 	deps, err := cfg.PollerDeps()
 	if err != nil {
 		deps = poller.DefaultDeps() // bad regex in config: fall back
+	}
+	if w := firstNonNil(cfgErr, err); w != nil {
+		_ = tmuxpkg.DisplayMessage("tmux-agents: config warning: " + w.Error())
 	}
 	snap, err := state.Load(state.DefaultPath())
 	if err != nil || snap.Stale(now, 3*time.Second) {
