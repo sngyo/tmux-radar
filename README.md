@@ -103,7 +103,8 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 ```
 
 - `poll_interval_ms` — how often, in milliseconds, the poller re-scans tmux
-  panes and re-evaluates each agent's state.
+  panes and re-evaluates each agent's state. The staleness window used by
+  `summary` and `jump` scales with this value (3× the interval, minimum 3s).
 - `done_ttl_min` — how many minutes an agent that just finished (transitioned
   `working` → `idle`) is shown as `done` before reverting to plain `idle`.
 - `hidden_prefix` — window-name prefix that gets folded into a single

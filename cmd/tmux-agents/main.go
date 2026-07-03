@@ -47,12 +47,24 @@ func run(args []string, stdout io.Writer) int {
 	}
 }
 
+// staleFor derives the snapshot staleness window from the poll interval:
+// at least 3s, and wide enough to span three missed polls so a slow
+// configured cadence does not starve summary/jump readers.
+func staleFor(pollIntervalMS int) time.Duration {
+	ttl := 3 * time.Duration(pollIntervalMS) * time.Millisecond
+	if ttl < 3*time.Second {
+		ttl = 3 * time.Second
+	}
+	return ttl
+}
+
 func cmdSummary(stdout io.Writer) int {
 	s, err := state.Load(state.DefaultPath())
 	if err != nil {
 		return 0 // no state yet -> empty segment, success for status bar
 	}
-	fmt.Fprint(stdout, state.Summary(s, time.Now(), 3*time.Second))
+	cfg, _ := config.Load(config.DefaultConfigPath()) // errors intentionally ignored: status line must never print warnings
+	fmt.Fprint(stdout, state.Summary(s, time.Now(), staleFor(cfg.PollIntervalMS)))
 	return 0
 }
 
@@ -100,7 +112,7 @@ func cmdJump() int {
 		_ = tmuxpkg.DisplayMessage("tmux-agents: config warning: " + w.Error())
 	}
 	snap, err := state.Load(state.DefaultPath())
-	if err != nil || snap.Stale(now, 3*time.Second) {
+	if err != nil || snap.Stale(now, staleFor(cfg.PollIntervalMS)) {
 		// Reuse the (possibly stale) snapshot as prev so working->idle
 		// transitions can still arm the done overlay on this one-shot poll.
 		snap, err = poller.RunOnce(snap, deps, now)

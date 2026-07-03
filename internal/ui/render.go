@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -102,7 +103,7 @@ func Render(v ViewData) []Row {
 		if !v.FoldHidden {
 			marker = "▾"
 		}
-		text := fmt.Sprintf("%s %shidden — %d %s", marker, v.HiddenPrefix, len(hidden), plural)
+		text := fmt.Sprintf("%s %shidden — %d %s", marker, sanitize(v.HiddenPrefix), len(hidden), plural)
 		if hiddenBlocked > 0 {
 			text += fmt.Sprintf(" ◆%d", hiddenBlocked)
 		}
@@ -152,7 +153,7 @@ func agentRows(agents []state.Agent, now time.Time) []Row {
 // sanitize removes control runes so a row can never span screen lines.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
