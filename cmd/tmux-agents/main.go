@@ -79,7 +79,9 @@ func cmdJump() int {
 	now := time.Now()
 	snap, err := state.Load(state.DefaultPath())
 	if err != nil || snap.Stale(now, 3*time.Second) {
-		snap, err = poller.RunOnce(state.Snapshot{}, poller.DefaultDeps(), now)
+		// Reuse the (possibly stale) snapshot as prev so working->idle
+		// transitions can still arm the done overlay on this one-shot poll.
+		snap, err = poller.RunOnce(snap, poller.DefaultDeps(), now)
 		if err != nil {
 			_ = tmuxpkg.DisplayMessage("tmux-agents: " + err.Error())
 			return 1
