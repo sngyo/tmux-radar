@@ -7,10 +7,13 @@ import (
 	"os"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/sngyo/tmux-agents/internal/attention"
 	"github.com/sngyo/tmux-agents/internal/poller"
 	"github.com/sngyo/tmux-agents/internal/state"
 	tmuxpkg "github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-agents/internal/ui"
 )
 
 const version = "0.1.0-dev"
@@ -36,8 +39,7 @@ func run(args []string, stdout io.Writer) int {
 	case "jump":
 		return cmdJump()
 	case "sidebar":
-		fmt.Fprintf(stdout, "%s: not implemented yet\n", cmd)
-		return 1
+		return cmdSidebar(stdout)
 	default:
 		fmt.Fprintf(stdout, "usage: tmux-agents [sidebar|summary|jump|watch|version]\n")
 		return 2
@@ -96,6 +98,17 @@ func cmdJump() int {
 	}
 	if err := tmuxpkg.JumpTo(target.Session, target.WindowIndex, target.PaneID); err != nil {
 		_ = tmuxpkg.DisplayMessage("tmux-agents: jump failed: " + err.Error())
+		return 1
+	}
+	return 0
+}
+
+// cmdSidebar runs the bubbletea sidebar app in the current terminal.
+func cmdSidebar(stdout io.Writer) int {
+	app := ui.NewApp(poller.DefaultDeps(), "")
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(stdout, "sidebar error: %v\n", err)
 		return 1
 	}
 	return 0
