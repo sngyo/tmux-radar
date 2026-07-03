@@ -37,6 +37,7 @@ type snapMsg struct {
 type App struct {
 	deps           poller.Deps
 	focusReturnCmd string
+	hiddenPrefix   string
 	snap           state.Snapshot
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
@@ -46,8 +47,8 @@ type App struct {
 
 // NewApp builds the sidebar model. focusReturnCmd, when non-empty, runs
 // via `sh -c` after a click jump to hand focus back to the tmux split.
-func NewApp(deps poller.Deps, focusReturnCmd string) *App {
-	return &App{deps: deps, focusReturnCmd: focusReturnCmd, fold: true}
+func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string) *App {
+	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix, fold: true}
 }
 
 func (a *App) Init() tea.Cmd {
@@ -133,7 +134,7 @@ func (a *App) View() string {
 		return "tmux server not running…\nretrying every second (q to quit)\n"
 	}
 	a.rows = Render(ViewData{
-		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: "_", Now: time.Now(),
+		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix, Now: time.Now(),
 	})
 	out := ""
 	for _, r := range a.rows {

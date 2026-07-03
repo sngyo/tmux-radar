@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/sngyo/tmux-agents/internal/attention"
+	"github.com/sngyo/tmux-agents/internal/config"
 	"github.com/sngyo/tmux-agents/internal/poller"
 	"github.com/sngyo/tmux-agents/internal/state"
 	tmuxpkg "github.com/sngyo/tmux-agents/internal/tmux"
@@ -57,7 +58,11 @@ func cmdSummary(stdout io.Writer) int {
 
 // cmdWatch runs the poller headlessly (P1 usage and debugging).
 func cmdWatch(stdout io.Writer) int {
-	deps := poller.DefaultDeps()
+	cfg, _ := config.Load(config.DefaultConfigPath())
+	deps, err := cfg.PollerDeps()
+	if err != nil {
+		deps = poller.DefaultDeps() // bad regex in config: fall back
+	}
 	path := state.DefaultPath()
 	var snap state.Snapshot
 	fmt.Fprintf(stdout, "watching; writing %s (ctrl-c to stop)\n", path)
@@ -79,11 +84,16 @@ func cmdWatch(stdout io.Writer) int {
 // Stale state (sidebar/watch not running) triggers one inline poll.
 func cmdJump() int {
 	now := time.Now()
+	cfg, _ := config.Load(config.DefaultConfigPath())
+	deps, err := cfg.PollerDeps()
+	if err != nil {
+		deps = poller.DefaultDeps() // bad regex in config: fall back
+	}
 	snap, err := state.Load(state.DefaultPath())
 	if err != nil || snap.Stale(now, 3*time.Second) {
 		// Reuse the (possibly stale) snapshot as prev so working->idle
 		// transitions can still arm the done overlay on this one-shot poll.
-		snap, err = poller.RunOnce(snap, poller.DefaultDeps(), now)
+		snap, err = poller.RunOnce(snap, deps, now)
 		if err != nil {
 			_ = tmuxpkg.DisplayMessage("tmux-agents: " + err.Error())
 			return 1
@@ -105,11 +115,29 @@ func cmdJump() int {
 
 // cmdSidebar runs the bubbletea sidebar app in the current terminal.
 func cmdSidebar(stdout io.Writer) int {
-	app := ui.NewApp(poller.DefaultDeps(), "")
+	cfg, cfgErr := config.Load(config.DefaultConfigPath())
+	deps, err := cfg.PollerDeps()
+	if err != nil {
+		deps = poller.DefaultDeps() // bad regex in config: fall back
+	}
+	if cfgErr != nil || err != nil {
+		fmt.Fprintf(stdout, "config warning: %v\n", firstNonNil(cfgErr, err))
+	}
+	app := ui.NewApp(deps, cfg.FocusReturnCmd, cfg.HiddenPrefix)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(stdout, "sidebar error: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// firstNonNil returns the first non-nil error, or nil if all are nil.
+func firstNonNil(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
