@@ -68,6 +68,10 @@ func cmdWatch(stdout io.Writer) int {
 	}
 	path := state.DefaultPath()
 	var snap state.Snapshot
+	interval := time.Duration(cfg.PollIntervalMS) * time.Millisecond
+	if interval <= 0 {
+		interval = time.Second // zero/negative would spin or stall the poll loop
+	}
 	fmt.Fprintf(stdout, "watching; writing %s (ctrl-c to stop)\n", path)
 	for {
 		next, err := poller.RunOnce(snap, deps, time.Now())
@@ -79,7 +83,7 @@ func cmdWatch(stdout io.Writer) int {
 				fmt.Fprintf(stdout, "save error: %v\n", err)
 			}
 		}
-		time.Sleep(time.Second)
+		time.Sleep(interval)
 	}
 }
 
@@ -129,7 +133,8 @@ func cmdSidebar(stdout io.Writer) int {
 	if cfgErr != nil || err != nil {
 		fmt.Fprintf(stdout, "config warning: %v\n", firstNonNil(cfgErr, err))
 	}
-	app := ui.NewApp(deps, cfg.FocusReturnCmd, cfg.HiddenPrefix)
+	interval := time.Duration(cfg.PollIntervalMS) * time.Millisecond
+	app := ui.NewApp(deps, cfg.FocusReturnCmd, cfg.HiddenPrefix, interval)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(stdout, "sidebar error: %v\n", err)

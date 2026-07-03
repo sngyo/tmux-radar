@@ -38,6 +38,7 @@ type App struct {
 	deps           poller.Deps
 	focusReturnCmd string
 	hiddenPrefix   string
+	interval       time.Duration
 	snap           state.Snapshot
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
@@ -47,17 +48,20 @@ type App struct {
 
 // NewApp builds the sidebar model. focusReturnCmd, when non-empty, runs
 // via `sh -c` after a click jump to hand focus back to the tmux split.
-func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string) *App {
-	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix, fold: true}
+func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time.Duration) *App {
+	if interval <= 0 {
+		interval = time.Second // zero/negative would spin or stall the tick loop
+	}
+	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix, interval: interval, fold: true}
 }
 
 func (a *App) Init() tea.Cmd {
 	a.inFlight = true
-	return tea.Batch(a.poll(), tick())
+	return tea.Batch(a.poll(), a.tick())
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+func (a *App) tick() tea.Cmd {
+	return tea.Tick(a.interval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func (a *App) poll() tea.Cmd {
@@ -75,7 +79,7 @@ func (a *App) poll() tea.Cmd {
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tickMsg:
-		cmds := []tea.Cmd{tick()}
+		cmds := []tea.Cmd{a.tick()}
 		if !a.inFlight {
 			a.inFlight = true
 			cmds = append(cmds, a.poll())

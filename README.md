@@ -99,7 +99,7 @@ focus_return_cmd = ""   # e.g. "hs -c 'focusTmuxSplit()'"
 # installs version-named binaries ("2.1.199"), hence the version pattern.
 process_names = ['^claude$', '^[0-9]+\.[0-9]+\.[0-9]+$']
 working  = ['esc to interrupt']
-blocked  = ['Do you want to proceed\?', '❯ 1\. Yes', 'Would you like to']
+blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 ```
 
 - `poll_interval_ms` — how often, in milliseconds, the poller re-scans tmux
