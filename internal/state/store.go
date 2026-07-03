@@ -18,7 +18,8 @@ func DefaultPath() string {
 // Save writes the snapshot atomically (temp file + rename) so concurrent
 // readers never observe partial JSON.
 func Save(path string, s Snapshot) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// State may reveal user activity (session/window names): owner-only perms.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	b, err := json.Marshal(s)
@@ -26,7 +27,7 @@ func Save(path string, s Snapshot) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
