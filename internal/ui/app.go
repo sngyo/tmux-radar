@@ -12,19 +12,24 @@ import (
 	"github.com/sngyo/tmux-agents/internal/tmux"
 )
 
+// Faint is avoided on purpose: with dozens of idle agents it makes the
+// whole sidebar unreadably dim. Structure rows use mid greys from the
+// 256-color palette (stable across themes; Solarized remaps bright ANSI
+// 8-15 to dark tones, so those are avoided too). Idle rows use the
+// terminal's default foreground.
 var styles = map[RowKind]lipgloss.Style{
-	RowHeader: lipgloss.NewStyle().Faint(true),
+	RowHeader: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 	RowAlert:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
-	RowGroup:  lipgloss.NewStyle().Faint(true),
-	RowFold:   lipgloss.NewStyle().Faint(true),
-	RowFooter: lipgloss.NewStyle().Faint(true),
+	RowGroup:  lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	RowFold:   lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	RowFooter: lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
 }
 
 var displayStyles = map[state.Display]lipgloss.Style{
 	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
 	state.DisplayBlocked: lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 	state.DisplayDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
-	state.DisplayIdle:    lipgloss.NewStyle().Faint(true),
+	state.DisplayIdle:    lipgloss.NewStyle(), // terminal default foreground
 }
 
 type tickMsg time.Time
