@@ -42,6 +42,7 @@ type App struct {
 	snap           state.Snapshot
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
+	width          int // pane width from the last WindowSizeMsg
 	err            error
 	inFlight       bool // a poll cmd is outstanding; skip re-issuing until it returns
 }
@@ -94,6 +95,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.snap = m.snap
 		}
 		return a, nil
+	case tea.WindowSizeMsg:
+		a.width = m.Width
+		return a, nil
 	case tea.KeyMsg:
 		if m.String() == "q" || m.String() == "ctrl+c" {
 			return a, tea.Quit
@@ -138,7 +142,8 @@ func (a *App) View() string {
 		return "tmux server not running…\nretrying every second (q to quit)\n"
 	}
 	a.rows = Render(ViewData{
-		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix, Now: time.Now(),
+		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix,
+		Now: time.Now(), Width: a.width,
 	})
 	out := ""
 	for _, r := range a.rows {

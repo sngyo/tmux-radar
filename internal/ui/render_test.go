@@ -120,29 +120,43 @@ func TestRenderFoldHidesUnderscoreWindows(t *testing.T) {
 	}
 }
 
-func TestRenderAgeColumn(t *testing.T) {
-	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+func TestRenderLabelFillsWidth(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 1, "a-very-long-window-name-that-should-not-be-cut-short", 1, "", detect.Working, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 40})
 	for _, r := range rows {
-		if r.PaneID == "%api" && !strings.Contains(r.Text, "12m") {
-			t.Errorf("row %q should contain age 12m", r.Text)
+		if r.Kind != RowAgent {
+			continue
+		}
+		// with Width 40 the label budget is 35 cols — far past the old 16
+		if !strings.Contains(r.Text, "window-name-that-s") {
+			t.Errorf("label not expanded to pane width: %q", r.Text)
+		}
+		if lipgloss.Width(r.Text) > 40 {
+			t.Errorf("row exceeds pane width 40: %q", r.Text)
 		}
 	}
 }
 
-func TestRenderWideCharColumnsAlign(t *testing.T) {
-	agents := []state.Agent{
-		mk("main", 1, "api", 1, "", detect.Working, t0),
-		mk("main", 2, "日本語の長いウィンドウ名テスト", 1, "", detect.Idle, t0),
-	}
-	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0})
-	var widths []int
+func TestRenderNoAgeColumn(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
 	for _, r := range rows {
-		if r.Kind == RowAgent {
-			widths = append(widths, lipgloss.Width(r.Text))
+		if r.PaneID == "%api" && strings.Contains(r.Text, "12m") {
+			t.Errorf("row %q must not contain an age column", r.Text)
 		}
 	}
-	if len(widths) != 2 || widths[0] != widths[1] {
-		t.Errorf("agent row display widths differ: %v", widths)
+}
+
+func TestRenderWideCharRowsStayWithinWidth(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 1, "日本語の長いウィンドウ名テストがここにある", 1, "", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 30})
+	for _, r := range rows {
+		if r.Kind == RowAgent && lipgloss.Width(r.Text) > 30 {
+			t.Errorf("row wider than pane (%d cols): %q", lipgloss.Width(r.Text), r.Text)
+		}
 	}
 }
 

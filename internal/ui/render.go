@@ -41,6 +41,7 @@ type ViewData struct {
 	FoldHidden   bool
 	HiddenPrefix string
 	Now          time.Time
+	Width        int // pane width in columns; <=0 falls back to a sane default
 }
 
 var icons = map[state.Display]string{
@@ -81,13 +82,23 @@ func Render(v ViewData) []Row {
 		}
 	}
 
+	// Labels stretch to the pane width: everything left of the label costs
+	// 5 columns (icon, space, 3-column window ref).
+	labelW := v.Width - 5
+	if v.Width <= 0 {
+		labelW = 24
+	}
+	if labelW < 8 {
+		labelW = 8
+	}
+
 	rows := []Row{{Text: fmt.Sprintf("AGENTS%14d agents", len(agents)), Kind: RowHeader}}
 	if blocked > 0 {
 		rows = append(rows, Row{
 			Text: fmt.Sprintf("◆ %d blocked — C-t a to jump", blocked), Kind: RowAlert,
 		})
 	}
-	rows = append(rows, agentRows(visible, v.Now)...)
+	rows = append(rows, agentRows(visible, v.Now, labelW)...)
 
 	if len(hidden) > 0 {
 		hiddenBlocked := 0
@@ -109,7 +120,7 @@ func Render(v ViewData) []Row {
 		}
 		rows = append(rows, Row{Text: text, Kind: RowFold, ToggleFold: true})
 		if !v.FoldHidden {
-			rows = append(rows, agentRows(hidden, v.Now)...)
+			rows = append(rows, agentRows(hidden, v.Now, labelW)...)
 		}
 	}
 
@@ -120,7 +131,8 @@ func Render(v ViewData) []Row {
 // agentRows emits group headers per session and one row per agent.
 // A window's first row reads like the tmux window list ("17:name");
 // its 2nd+ panes hang below with "└" and their pane title, no index.
-func agentRows(agents []state.Agent, now time.Time) []Row {
+// Labels take the full remaining width (labelW columns).
+func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
 	var rows []Row
 	lastSession := ""
 	prevWindow := ""
@@ -145,8 +157,7 @@ func agentRows(agents []state.Agent, now time.Time) []Row {
 		prevWindow = windowKey
 		disp := a.Display(now)
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("%s %3s%s %5s",
-				icons[disp], ref, pad(truncate(label, 16), 16), age(now.Sub(a.Since))),
+			Text: fmt.Sprintf("%s %3s%s", icons[disp], ref, truncate(label, labelW)),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID,
 		})
 	}
@@ -163,14 +174,6 @@ func sanitize(s string) string {
 	}, s)
 }
 
-// pad right-pads s with spaces to the given terminal display width.
-func pad(s string, w int) string {
-	if d := w - lipgloss.Width(s); d > 0 {
-		return s + strings.Repeat(" ", d)
-	}
-	return s
-}
-
 // truncate cuts s to at most w terminal columns, ellipsizing when needed.
 func truncate(s string, w int) string {
 	if lipgloss.Width(s) <= w {
@@ -184,16 +187,4 @@ func truncate(s string, w int) string {
 		b.WriteRune(r)
 	}
 	return b.String() + "…"
-}
-
-// age formats a duration compactly: 45s, 12m, 3h.
-func age(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	default:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
 }

@@ -15,12 +15,12 @@ needs your attention, cycling through the queue on repeated presses.
 AGENTS                8 agents
 ◆ 1 blocked — C-t a to jump     ← only when blocked > 0
 ─ main ──────────────────────
-○  11:web              33m
-●  12:api              12m
-●  14:worker            5m
-◆     └ reviewer        3m   ← 2nd pane of same window: hang + pane title
+○  11:web
+●  12:api
+●  14:worker
+◆     └ reviewer             ← 2nd pane of same window: hang + pane title
 ─ monitor ───────────────────
-●   1:claude           51m
+●   1:claude
 ▸ _hidden — 8 agents            ← fold; click to expand; shows ◆n if any
 ──────────────────────────────
 C-t a jump · click jump · read-only
