@@ -26,7 +26,7 @@ var styles = map[RowKind]lipgloss.Style{
 }
 
 var displayStyles = map[state.Display]lipgloss.Style{
-	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
 	state.DisplayBlocked: lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 	state.DisplayDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
 	state.DisplayIdle:    lipgloss.NewStyle(), // terminal default foreground
