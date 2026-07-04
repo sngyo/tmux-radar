@@ -58,3 +58,23 @@ func TestNextEmptyQueue(t *testing.T) {
 		t.Error("empty queue must return ok=false")
 	}
 }
+
+func TestWorkingReturnsOldestFirstAndExcludesOthers(t *testing.T) {
+	agents := []state.Agent{
+		ag("%idle", detect.Idle, t0, false),
+		ag("%work-new", detect.Working, t0.Add(-time.Minute), false),
+		ag("%blocked", detect.Blocked, t0.Add(-time.Hour), false),
+		ag("%work-old", detect.Working, t0.Add(-30*time.Minute), false),
+		ag("%done", detect.Idle, t0.Add(-time.Minute), true),
+	}
+	w := Working(agents, t0)
+	want := []string{"%work-old", "%work-new"}
+	if len(w) != len(want) {
+		t.Fatalf("working len = %d, want %d: %+v", len(w), len(want), w)
+	}
+	for i, id := range want {
+		if w[i].PaneID != id {
+			t.Errorf("w[%d] = %s, want %s", i, w[i].PaneID, id)
+		}
+	}
+}

@@ -122,6 +122,10 @@ func cmdJump() int {
 		}
 	}
 	queue := attention.Queue(snap.Agents, now)
+	if len(queue) == 0 {
+		// Nothing needs attention: fall back to touring working agents.
+		queue = attention.Working(snap.Agents, now)
+	}
 	current, _ := tmuxpkg.CurrentPaneID()
 	target, ok := attention.Next(queue, current)
 	if !ok {

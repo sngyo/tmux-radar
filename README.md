@@ -83,7 +83,7 @@ end
 |---|---|
 | `sidebar` | Runs the bubbletea sidebar TUI in the current terminal (the default when no subcommand is given). Polls tmux panes, renders the agent list, and supports mouse-click jump. |
 | `summary` | Prints a ready-to-render tmux status-line string (e.g. `◆1 ●3 ○2`) by reading the cached state; intended for `status-right`. Prints nothing if the state is stale or missing. |
-| `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. |
+| `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. When nothing needs attention it falls back to touring the working agents (oldest first); only when nothing is working either does it show a status message and stay put. |
 | `watch` | Runs the poller headlessly in the foreground, writing state to disk on every tick — useful for status-line/jump support without running the sidebar TUI. |
 | `version` | Prints the `tmux-agents` version string. |
 
