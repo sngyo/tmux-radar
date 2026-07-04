@@ -61,6 +61,56 @@ func CapturePane(paneID string) (string, error) {
 	return string(out), nil
 }
 
+// Focus identifies the attached client's active pane and the window it
+// lives in; the sidebar highlights that window's rows.
+type Focus struct {
+	Session     string `json:"session"`
+	WindowIndex int    `json:"window_index"`
+	PaneID      string `json:"pane_id"`
+}
+
+// focusFormat feeds ParseFocus via list-panes. display-message is avoided:
+// without a client context it resolves to "the most recently used session",
+// which can be a detached one; list-panes lets us require an attached session.
+const focusFormat = "#{session_attached}\t#{session_activity}\t#{session_name}\t#{window_index}\t#{pane_id}\t#{window_active}\t#{pane_active}"
+
+// CurrentFocus returns the active pane of the most recently active
+// attached session.
+func CurrentFocus() (Focus, error) {
+	out, err := exec.Command("tmux", "list-panes", "-a", "-F", focusFormat).Output()
+	if err != nil {
+		return Focus{}, fmt.Errorf("tmux list-panes: %w", err)
+	}
+	return ParseFocus(string(out))
+}
+
+// ParseFocus picks the focused pane from list-panes output in focusFormat:
+// the active pane of the active window of an attached session, preferring
+// the session with the most recent activity. Malformed lines are skipped.
+func ParseFocus(out string) (Focus, error) {
+	best := Focus{}
+	bestActivity := int64(-1)
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 7 || f[0] == "0" || f[5] != "1" || f[6] != "1" {
+			continue
+		}
+		activity, err1 := strconv.ParseInt(f[1], 10, 64)
+		wi, err2 := strconv.Atoi(f[3])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		if activity > bestActivity {
+			bestActivity = activity
+			best = Focus{Session: f[2], WindowIndex: wi, PaneID: f[4]}
+		}
+	}
+	if bestActivity < 0 {
+		return Focus{}, fmt.Errorf("no attached session in list-panes output")
+	}
+	return best, nil
+}
+
 // CurrentPaneID returns the active pane id of the current client.
 func CurrentPaneID() (string, error) {
 	out, err := exec.Command("tmux", "display-message", "-p", "#{pane_id}").Output()

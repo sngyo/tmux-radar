@@ -23,6 +23,7 @@ func TestDetect(t *testing.T) {
 		want State
 	}{
 		{"working.txt", Working},
+		{"working_background_agent.txt", Working},
 		{"blocked_permission.txt", Blocked},
 		{"blocked_question.txt", Blocked},
 		{"idle.txt", Idle},
@@ -50,5 +51,43 @@ func TestDetectIgnoresHistoryAboveTail(t *testing.T) {
 	screen := history + fixture(t, "idle.txt")
 	if got := DefaultRules().Detect(screen); got != Idle {
 		t.Errorf("got %s, want idle (history above the tail must not match)", got)
+	}
+}
+
+func TestSubagentsScrapesTaskList(t *testing.T) {
+	subs := Subagents(fixture(t, "working_background_agent.txt"))
+	if len(subs) != 1 {
+		t.Fatalf("subagents = %d, want 1: %+v", len(subs), subs)
+	}
+	want := Subagent{Type: "general-purpose", Title: "Refactor the billing report generator"}
+	if subs[0] != want {
+		t.Errorf("got %+v, want %+v", subs[0], want)
+	}
+}
+
+func TestSubagentsIgnoresPlainConversation(t *testing.T) {
+	screens := []string{
+		"we discussed the general-purpose agent yesterday\n",
+		fixture(t, "idle.txt"),
+		fixture(t, "working.txt"),
+	}
+	for _, s := range screens {
+		if subs := Subagents(s); len(subs) != 0 {
+			t.Errorf("screen %q: unexpected subagents %+v", s[:40], subs)
+		}
+	}
+}
+
+func TestSubagentsMarksDoneEntries(t *testing.T) {
+	screen := "  ● main\n  ✓ Explore  Map the config loaders\n  ○ general-purpose  Fix the flaky test\n"
+	subs := Subagents(screen)
+	if len(subs) != 2 {
+		t.Fatalf("subagents = %d, want 2: %+v", len(subs), subs)
+	}
+	if !subs[0].Done || subs[0].Type != "Explore" {
+		t.Errorf("first entry should be a done Explore agent: %+v", subs[0])
+	}
+	if subs[1].Done {
+		t.Errorf("second entry must not be done: %+v", subs[1])
 	}
 }

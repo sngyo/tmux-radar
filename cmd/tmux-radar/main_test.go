@@ -11,7 +11,7 @@ func TestRunVersion(t *testing.T) {
 	if got := run([]string{"version"}, &out); got != 0 {
 		t.Fatalf("exit = %d, want 0", got)
 	}
-	if !strings.Contains(out.String(), "tmux-agents") {
+	if !strings.Contains(out.String(), "tmux-radar") {
 		t.Errorf("output %q does not contain binary name", out.String())
 	}
 }

@@ -2,11 +2,12 @@ package state
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 var t0 = time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
@@ -87,5 +88,33 @@ func TestSaveLoadRoundTripAndStale(t *testing.T) {
 	}
 	if !got.Stale(t0.Add(10*time.Second), 3*time.Second) {
 		t.Error("old snapshot not reported stale")
+	}
+}
+
+// Two writers (watch + sidebar in production) saving the same path must
+// never fail: a shared fixed temp name lets one writer rename the other's
+// temp file away, so the loser's rename hits ENOENT.
+func TestSaveConcurrentWritersDoNotCollide(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
+
+	const writers, saves = 4, 300
+	errs := make(chan error, writers*saves)
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < saves; i++ {
+				if err := Save(path, s); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent Save failed: %v", err)
 	}
 }

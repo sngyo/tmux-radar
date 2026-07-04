@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/state"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/state"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 var errPaneGone = errors.New("pane gone")
@@ -26,7 +26,7 @@ func TestRunOnceFiltersAndDetects(t *testing.T) {
 		},
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentPane:     func() (string, error) { return "%elsewhere", nil },
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
 	s, err := RunOnce(state.Snapshot{}, d, now)
@@ -51,7 +51,7 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 		},
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentPane:     func() (string, error) { return "%elsewhere", nil },
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -74,7 +74,7 @@ func TestRunOnceClearsDoneOnVisitedPane(t *testing.T) {
 		Capture:         func(string) (string, error) { return "idle prompt", nil },
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentPane:     func() (string, error) { return "%1", nil },
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%1"}, nil },
 	}
 	s, err := RunOnce(prev, d, time.Now())
 	if err != nil {
@@ -103,5 +103,56 @@ func TestDefaultPatternsMatchVersionedClaudeBinary(t *testing.T) {
 	}
 	if matches(pats, "zsh") {
 		t.Error("zsh must not match default patterns")
+	}
+}
+
+func TestRunOnceRecordsFocus(t *testing.T) {
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", WindowIndex: 14, Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return "idle prompt", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus: func() (tmux.Focus, error) {
+			return tmux.Focus{Session: "main", WindowIndex: 14, PaneID: "%1"}, nil
+		},
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := tmux.Focus{Session: "main", WindowIndex: 14, PaneID: "%1"}
+	if s.Focus != want {
+		t.Errorf("snapshot focus = %+v, want %+v", s.Focus, want)
+	}
+}
+
+func TestRunOnceScrapesSubagents(t *testing.T) {
+	screen := "✳ Waiting for 1 background agent to finish\n" +
+		"  ● main\n" +
+		"  ○ general-purpose  Refactor the billing report generator\n"
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return screen, nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Agents) != 1 || len(s.Agents[0].Subagents) != 1 {
+		t.Fatalf("want 1 agent with 1 subagent, got %+v", s.Agents)
+	}
+	sub := s.Agents[0].Subagents[0]
+	if sub.Type != "general-purpose" || sub.Title != "Refactor the billing report generator" {
+		t.Errorf("got %+v", sub)
+	}
+	if s.Agents[0].State != detect.Working {
+		t.Errorf("agent state = %s, want working", s.Agents[0].State)
 	}
 }

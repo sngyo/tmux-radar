@@ -1,0 +1,9 @@
+✻ Waiting for 1 background agent to finish
+
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage
+
+  ⏺ main
+◯ general-purpose  Refactor the billing report generator    1m 20s · ↓ 76.2k tokens

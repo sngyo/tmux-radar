@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/state"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/state"
 )
 
 var t0 = time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)

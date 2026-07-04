@@ -11,7 +11,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/sngyo/tmux-agents/internal/state"
+	"github.com/sngyo/tmux-radar/internal/state"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 type RowKind int
@@ -24,6 +25,8 @@ const (
 	RowAgent
 	RowFold
 	RowFooter
+	RowSpacer   // blank separator between window blocks; inert to clicks
+	RowSubagent // background task nested under its agent; clicks jump to the parent pane
 )
 
 // Row is one sidebar line plus the metadata the app needs for styling
@@ -34,6 +37,8 @@ type Row struct {
 	Display    state.Display
 	PaneID     string // set on RowAgent
 	ToggleFold bool   // set on RowFold
+	Current    bool   // row belongs to the attached client's active window
+	Pending    bool   // pane title carries the [PENDING] marker: gray the row out
 }
 
 // ViewData is everything Render needs. Now is injected for testability.
@@ -42,15 +47,20 @@ type ViewData struct {
 	FoldHidden   bool
 	HiddenPrefix string
 	Now          time.Time
-	Width        int // pane width in columns; <=0 falls back to a sane default
+	Width        int        // pane width in columns; <=0 falls back to a sane default
+	Focus        tmux.Focus // active window; its rows get the current-row highlight
+	Frame        int        // animation frame; spins the working glyph
 }
 
 var icons = map[state.Display]string{
-	state.DisplayWorking: "●",
+	state.DisplayWorking: "●", // fallback; animated via spinnerFrames when rendering
 	state.DisplayBlocked: "◆",
 	state.DisplayDone:    "✓",
 	state.DisplayIdle:    "○",
 }
+
+// spinnerFrames animate the working glyph so running agents read as alive.
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // Render produces the full sidebar as rows, ordered
 // session → window index → pane index, hidden windows folded at the bottom.
@@ -83,9 +93,9 @@ func Render(v ViewData) []Row {
 		}
 	}
 
-	// Labels stretch to the pane width: agent rows consume 4 columns before
-	// the title (icon, space, "└", space — e.g. "● └ ").
-	labelW := v.Width - 4
+	// Labels stretch to the pane width: agent rows consume 5 columns before
+	// the title (pad, icon, space, branch, space — e.g. " ● └ ").
+	labelW := v.Width - 5
 	if v.Width <= 0 {
 		labelW = 24
 	}
@@ -99,7 +109,7 @@ func Render(v ViewData) []Row {
 			Text: fmt.Sprintf("◆ %d blocked — C-t a to jump", blocked), Kind: RowAlert,
 		})
 	}
-	rows = append(rows, agentRows(visible, v.Now, labelW)...)
+	rows = append(rows, agentRows(visible, v, labelW)...)
 
 	if len(hidden) > 0 {
 		hiddenBlocked := 0
@@ -121,11 +131,11 @@ func Render(v ViewData) []Row {
 		}
 		rows = append(rows, Row{Text: text, Kind: RowFold, ToggleFold: true})
 		if !v.FoldHidden {
-			rows = append(rows, agentRows(hidden, v.Now, labelW)...)
+			rows = append(rows, agentRows(hidden, v, labelW)...)
 		}
 	}
 
-	rows = append(rows, Row{Text: "C-t a jump · click jump · read-only", Kind: RowFooter})
+	rows = append(rows, Row{Text: "C-t a jump · click jump", Kind: RowFooter})
 	return rows
 }
 
@@ -134,22 +144,24 @@ func Render(v ViewData) []Row {
 // ("● └ <pane title|pane N>"). The window and its panes are different
 // hierarchy levels, so every pane hangs under its window's anchor —
 // including a window's only pane — and agent count equals hang-row count.
-func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
+func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 	var rows []Row
 	lastSession := ""
 	prevWindow := ""
-	for _, a := range agents {
+	for i, a := range agents {
 		session := sanitize(a.Session)
 		if session != lastSession {
-			rows = append(rows, Row{Text: "─ " + truncate(session, 24) + " ", Kind: RowGroup})
+			rows = appendSpaced(rows, Row{Text: groupRule(session, labelW+5), Kind: RowGroup})
 			lastSession = session
 			prevWindow = ""
 		}
+		current := v.Focus.PaneID != "" && a.Session == v.Focus.Session && a.WindowIndex == v.Focus.WindowIndex
 		windowKey := fmt.Sprintf("%s:%d", session, a.WindowIndex)
 		if windowKey != prevWindow {
 			winLabel := fmt.Sprintf("%d:%s", a.WindowIndex, sanitize(a.WindowName))
-			rows = append(rows, Row{
-				Text: "  " + truncate(winLabel, labelW+2), Kind: RowWindow, PaneID: a.PaneID,
+			rows = appendSpaced(rows, Row{
+				Text: "  " + truncate(winLabel, labelW+3), Kind: RowWindow, PaneID: a.PaneID,
+				Current: current,
 			})
 			prevWindow = windowKey
 		}
@@ -157,13 +169,70 @@ func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
 		if title == "" {
 			title = fmt.Sprintf("pane %d", a.PaneIndex)
 		}
-		disp := a.Display(now)
+		disp := a.Display(v.Now)
+		icon := icons[disp]
+		if disp == state.DisplayWorking {
+			icon = spinnerFrames[((v.Frame%len(spinnerFrames))+len(spinnerFrames))%len(spinnerFrames)]
+		}
+		// tree branch: ├ while siblings follow in the same window, └ on the last
+		branch := "└"
+		if i+1 < len(agents) && agents[i+1].Session == a.Session && agents[i+1].WindowIndex == a.WindowIndex {
+			branch = "├"
+		}
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("%s └ %s", icons[disp], truncate(title, labelW)),
-			Kind: RowAgent, Display: disp, PaneID: a.PaneID,
+			Text: fmt.Sprintf(" %s %s %s", icon, branch, truncate(title, labelW)),
+			Kind: RowAgent, Display: disp, PaneID: a.PaneID, Current: current,
+			Pending: strings.Contains(strings.ToUpper(title), "[PENDING]"),
+		})
+		rows = append(rows, subagentRows(a, labelW, current)...)
+	}
+	return rows
+}
+
+// subagentRows nests an agent's scraped background tasks one level deeper
+// than its hang row: "     ├ ○ general-purpose · task title".
+func subagentRows(a state.Agent, labelW int, current bool) []Row {
+	var rows []Row
+	for i, s := range a.Subagents {
+		branch := "└"
+		if i+1 < len(a.Subagents) {
+			branch = "├"
+		}
+		icon := "○"
+		if s.Done {
+			icon = "✓"
+		}
+		budget := labelW - 4 // the child prefix is 4 columns wider than the parent's
+		if budget < 8 {
+			budget = 8
+		}
+		label := sanitize(s.Type + " · " + s.Title)
+		rows = append(rows, Row{
+			Text: fmt.Sprintf("     %s %s %s", branch, icon, truncate(label, budget)),
+			Kind: RowSubagent, PaneID: a.PaneID, Current: current,
 		})
 	}
 	return rows
+}
+
+// appendSpaced starts a new block: a blank spacer first when the previous
+// row ends an agent block (hang or subagent row), so window blocks and
+// session rules breathe.
+func appendSpaced(rows []Row, r Row) []Row {
+	if n := len(rows); n > 0 && (rows[n-1].Kind == RowAgent || rows[n-1].Kind == RowSubagent) {
+		rows = append(rows, Row{Kind: RowSpacer})
+	}
+	return append(rows, r)
+}
+
+// groupRule builds a session divider whose rule line stretches to the
+// pane width: "─ main ───────". The name keeps at least one trailing dash.
+func groupRule(session string, width int) string {
+	text := "─ " + truncate(session, width-4) + " "
+	if fill := width - lipgloss.Width(text); fill > 0 {
+		text += strings.Repeat("─", fill)
+	}
+	return text
 }
 
 // sanitize removes control runes so a row can never span screen lines.

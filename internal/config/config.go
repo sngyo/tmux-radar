@@ -1,4 +1,4 @@
-// Package config loads ~/.config/tmux-agents/config.toml with embedded defaults.
+// Package config loads ~/.config/tmux-radar/config.toml with embedded defaults.
 package config
 
 import (
@@ -8,9 +8,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/poller"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/poller"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 // AgentRules is the per-agent-kind detection config.
@@ -36,24 +36,23 @@ func Default() Config {
 		PollIntervalMS: 1000,
 		HiddenPrefix:   "_",
 		Agents: map[string]AgentRules{
+			// Single source of truth: pattern strings live in detect/poller.
 			"claude": {
-				// Regexes; the version pattern matches Claude Code's
-				// auto-updated binaries named after the version.
-				ProcessNames: []string{`^claude$`, `^[0-9]+\.[0-9]+\.[0-9]+$`},
-				Working:      []string{`esc to interrupt`},
-				Blocked:      []string{`Do you want`, `❯ 1\.`, `Would you like to`},
+				ProcessNames: poller.DefaultProcessPatterns(),
+				Working:      detect.DefaultWorkingPatterns(),
+				Blocked:      detect.DefaultBlockedPatterns(),
 			},
 		},
 	}
 }
 
-// DefaultConfigPath returns ~/.config/tmux-agents/config.toml.
+// DefaultConfigPath returns ~/.config/tmux-radar/config.toml.
 func DefaultConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "config.toml"
 	}
-	return filepath.Join(home, ".config", "tmux-agents", "config.toml")
+	return filepath.Join(home, ".config", "tmux-radar", "config.toml")
 }
 
 // Load reads the config file. A missing file is not an error (defaults).
@@ -144,6 +143,6 @@ func (c Config) PollerDeps() (poller.Deps, error) {
 		Capture:         tmux.CapturePane,
 		Rules:           rules,
 		ProcessPatterns: pats,
-		CurrentPane:     tmux.CurrentPaneID,
+		CurrentFocus:    tmux.CurrentFocus,
 	}, nil
 }

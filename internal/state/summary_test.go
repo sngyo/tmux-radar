@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/detect"
 )
 
 func agent(st detect.State, done bool) Agent {

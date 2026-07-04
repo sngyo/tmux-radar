@@ -7,8 +7,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/state"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/state"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 var t0 = time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
@@ -49,8 +50,8 @@ func TestRenderWindowAnchorAndHangRows(t *testing.T) {
 			anchorFound = true
 		}
 		if r.Kind == RowAgent {
-			if !strings.Contains(r.Text, "└") {
-				t.Errorf("agent row %q must hang with └", r.Text)
+			if !strings.Contains(r.Text, "└") && !strings.Contains(r.Text, "├") {
+				t.Errorf("agent row %q must hang with a tree branch", r.Text)
 			}
 			// indexes live only on the window anchor, never on hang rows
 			if strings.Contains(r.Text, "14:") {
@@ -74,7 +75,7 @@ func TestRenderFirstRowShowsPaneTitle(t *testing.T) {
 		switch {
 		case r.Kind == RowWindow && strings.Contains(r.Text, "5:api"):
 			anchor = true
-		case r.Kind == RowAgent && strings.Contains(r.Text, "└ fixing tests"):
+		case r.Kind == RowAgent && strings.Contains(r.Text, "├ fixing tests"):
 			hangFixing = true
 		case r.Kind == RowAgent && strings.Contains(r.Text, "└ review"):
 			hangReview = true
@@ -84,19 +85,21 @@ func TestRenderFirstRowShowsPaneTitle(t *testing.T) {
 		t.Error(`expected a RowWindow anchor containing "5:api"`)
 	}
 	if !hangFixing {
-		t.Error(`expected a RowAgent hang row containing "└ fixing tests"`)
+		t.Error(`expected a RowAgent hang row containing "├ fixing tests" (first of two panes)`)
 	}
 	if !hangReview {
-		t.Error(`expected a RowAgent hang row containing "└ review"`)
+		t.Error(`expected a RowAgent hang row containing "└ review" (last pane)`)
 	}
 }
 
 func TestRenderStructure(t *testing.T) {
 	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
 	// header, alert (1 blocked), group main, window 12:api (1 agent),
-	// window 14:worker (2 agents), group mon, window 1:claude (1 agent), fold, footer
-	want := []RowKind{RowHeader, RowAlert, RowGroup, RowWindow, RowAgent, RowWindow, RowAgent, RowAgent,
-		RowGroup, RowWindow, RowAgent, RowFold, RowFooter}
+	// window 14:worker (2 agents), group mon, window 1:claude (1 agent),
+	// fold, footer — with one spacer between window blocks
+	want := []RowKind{RowHeader, RowAlert, RowGroup, RowWindow, RowAgent,
+		RowSpacer, RowWindow, RowAgent, RowAgent,
+		RowSpacer, RowGroup, RowWindow, RowAgent, RowFold, RowFooter}
 	got := kinds(rows)
 	if len(got) != len(want) {
 		t.Fatalf("rows = %d, want %d: %+v", len(got), len(want), rows)
@@ -207,6 +210,261 @@ func TestRenderSanitizesControlChars(t *testing.T) {
 	for _, r := range rows {
 		if strings.ContainsAny(r.Text, "\n\t\r") {
 			t.Errorf("row text contains control chars: %q", r.Text)
+		}
+	}
+}
+
+func TestRenderGroupRuleStretchesToPaneWidth(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 30})
+	found := false
+	for _, r := range rows {
+		if r.Kind != RowGroup {
+			continue
+		}
+		found = true
+		if w := lipgloss.Width(r.Text); w != 30 {
+			t.Errorf("group row %q width = %d, want 30", r.Text, w)
+		}
+		if !strings.HasSuffix(r.Text, "─") {
+			t.Errorf("group row %q must end with a rule line", r.Text)
+		}
+	}
+	if !found {
+		t.Fatal("no RowGroup rows rendered")
+	}
+}
+
+func TestRenderGroupRuleLongSessionStaysWithinWidth(t *testing.T) {
+	agents := []state.Agent{
+		mk("非常に長い日本語のセッション名がここにある", 1, "win", 1, "", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 20})
+	for _, r := range rows {
+		if r.Kind == RowGroup && lipgloss.Width(r.Text) > 20 {
+			t.Errorf("group row wider than pane (%d cols): %q", lipgloss.Width(r.Text), r.Text)
+		}
+	}
+}
+
+func TestRenderMarksFocusedWindowRows(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0,
+		Focus: tmux.Focus{Session: "main", WindowIndex: 14, PaneID: "%worker"}})
+	var current, others []string
+	for _, r := range rows {
+		if r.Current {
+			current = append(current, r.Text)
+		} else {
+			others = append(others, r.Text)
+		}
+	}
+	// focused window 14 = anchor row + its two hang rows
+	if len(current) != 3 {
+		t.Fatalf("current rows = %d, want 3: %q", len(current), current)
+	}
+	if !strings.Contains(current[0], "14:worker") {
+		t.Errorf("first current row %q should be the 14:worker anchor", current[0])
+	}
+	for _, text := range others {
+		if strings.Contains(text, "12:api") && strings.Contains(text, "14:") {
+			t.Errorf("row %q outside window 14 must not be current", text)
+		}
+	}
+}
+
+func TestRenderNoFocusMarksNothing(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	for _, r := range rows {
+		if r.Current {
+			t.Errorf("row %q must not be current without focus", r.Text)
+		}
+	}
+}
+
+func TestRenderWorkingIconAnimatesAcrossFrames(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 1, "api", 1, "", detect.Working, t0),
+		mk("main", 2, "web", 1, "", detect.Blocked, t0),
+	}
+	icon := func(frame int) (working, blocked string) {
+		rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Frame: frame})
+		for _, r := range rows {
+			if r.Kind != RowAgent {
+				continue
+			}
+			first := strings.Fields(r.Text)[0]
+			if r.Display == state.DisplayWorking {
+				working = first
+			} else {
+				blocked = first
+			}
+		}
+		return
+	}
+	w0, b0 := icon(0)
+	w1, b1 := icon(1)
+	if w0 == w1 {
+		t.Errorf("working icon must animate: frame0=%q frame1=%q", w0, w1)
+	}
+	if b0 != "◆" || b1 != "◆" {
+		t.Errorf("blocked icon must stay ◆, got %q/%q", b0, b1)
+	}
+	// a full cycle returns to the first glyph
+	wN, _ := icon(len(spinnerFrames))
+	if wN != w0 {
+		t.Errorf("frame len(spinnerFrames) should wrap to frame 0: %q vs %q", wN, w0)
+	}
+}
+
+func TestRenderBlankLineBetweenWindowBlocks(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	for i, r := range rows {
+		// a window anchor or session rule never sits directly under a hang
+		// row: one blank spacer separates the blocks
+		if (r.Kind == RowWindow || r.Kind == RowGroup) && i > 0 && rows[i-1].Kind == RowAgent {
+			t.Errorf("row %d %q must be preceded by a spacer, got agent row %q", i, r.Text, rows[i-1].Text)
+		}
+		if r.Kind == RowSpacer {
+			if r.Text != "" {
+				t.Errorf("spacer row must be empty, got %q", r.Text)
+			}
+			if r.Current || r.PaneID != "" || r.ToggleFold {
+				t.Errorf("spacer row must be inert: %+v", r)
+			}
+		}
+	}
+	// the first window of a group hugs its session rule — no spacer between
+	for i, r := range rows {
+		if r.Kind == RowGroup && i+1 < len(rows) && rows[i+1].Kind == RowSpacer {
+			t.Errorf("no spacer allowed right after a session rule %q", r.Text)
+		}
+	}
+}
+
+func TestRenderMarksPendingTitles(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 1, "neo3", 1, "✳ [PENDING] Resume crashed session", detect.Working, t0),
+		mk("main", 1, "neo3", 2, "✳ [pending] lower case too", detect.Idle, t0),
+		mk("main", 1, "neo3", 3, "✳ Investigate JWT blocker", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60})
+	var pending, normal int
+	for _, r := range rows {
+		if r.Kind != RowAgent {
+			if r.Pending {
+				t.Errorf("non-agent row %q must not be pending", r.Text)
+			}
+			continue
+		}
+		if r.Pending {
+			pending++
+		} else {
+			normal++
+		}
+	}
+	if pending != 2 || normal != 1 {
+		t.Errorf("pending=%d normal=%d, want 2/1", pending, normal)
+	}
+}
+
+func TestRenderFooterOmitsReadOnly(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	footer := rows[len(rows)-1]
+	if footer.Kind != RowFooter {
+		t.Fatalf("last row kind = %v, want footer", footer.Kind)
+	}
+	if footer.Text != "C-t a jump · click jump" {
+		t.Errorf("footer = %q, want %q", footer.Text, "C-t a jump · click jump")
+	}
+}
+
+func TestRenderTreeConnectsSiblingPanes(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 5, "api", 1, "first", detect.Idle, t0),
+		mk("main", 5, "api", 2, "middle", detect.Idle, t0),
+		mk("main", 5, "api", 3, "last", detect.Idle, t0),
+		mk("main", 6, "web", 1, "solo", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 40})
+	want := map[string]string{"first": "├", "middle": "├", "last": "└", "solo": "└"}
+	for _, r := range rows {
+		if r.Kind != RowAgent {
+			continue
+		}
+		for title, branch := range want {
+			if strings.Contains(r.Text, title) && !strings.Contains(r.Text, branch) {
+				t.Errorf("row %q should use %q as its tree branch", r.Text, branch)
+			}
+		}
+	}
+}
+
+func TestRenderAgentRowsHaveLeftPadding(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 40})
+	seen := false
+	for _, r := range rows {
+		if r.Kind != RowAgent {
+			continue
+		}
+		seen = true
+		if !strings.HasPrefix(r.Text, " ") || strings.HasPrefix(r.Text, "  ") {
+			t.Errorf("agent row %q must start with exactly one pad space", r.Text)
+		}
+		if lipgloss.Width(r.Text) > 40 {
+			t.Errorf("agent row exceeds pane width 40: %q", r.Text)
+		}
+	}
+	if !seen {
+		t.Fatal("no agent rows rendered")
+	}
+}
+
+func TestRenderSubagentRowsNestDeeper(t *testing.T) {
+	a := mk("main", 5, "api", 1, "orchestrating the refactor", detect.Working, t0)
+	a.Subagents = []detect.Subagent{
+		{Type: "Explore", Title: "Map the config loaders", Done: true},
+		{Type: "general-purpose", Title: "Refactor the billing report generator"},
+	}
+	rows := Render(ViewData{Agents: []state.Agent{a}, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60})
+	var subs []Row
+	for _, r := range rows {
+		if r.Kind == RowSubagent {
+			subs = append(subs, r)
+		}
+	}
+	if len(subs) != 2 {
+		t.Fatalf("subagent rows = %d, want 2: %+v", len(subs), rows)
+	}
+	for _, s := range subs {
+		if !strings.HasPrefix(s.Text, "     ") {
+			t.Errorf("subagent row %q must indent deeper than its parent", s.Text)
+		}
+		if s.PaneID != "%api" {
+			t.Errorf("subagent row must click-jump to the parent pane, got %q", s.PaneID)
+		}
+		if lipgloss.Width(s.Text) > 60 {
+			t.Errorf("subagent row exceeds pane width: %q", s.Text)
+		}
+	}
+	if !strings.Contains(subs[0].Text, "├") || !strings.Contains(subs[0].Text, "✓") ||
+		!strings.Contains(subs[0].Text, "Explore") {
+		t.Errorf("first subagent row should be a done ├ Explore entry: %q", subs[0].Text)
+	}
+	if !strings.Contains(subs[1].Text, "└") || !strings.Contains(subs[1].Text, "general-purpose") {
+		t.Errorf("last subagent row should be a └ general-purpose entry: %q", subs[1].Text)
+	}
+}
+
+func TestRenderSpacerFollowsSubagentRows(t *testing.T) {
+	withSubs := mk("main", 5, "api", 1, "orchestrating", detect.Working, t0)
+	withSubs.Subagents = []detect.Subagent{{Type: "Explore", Title: "Map the loaders"}}
+	agents := []state.Agent{withSubs, mk("main", 6, "web", 1, "idle prompt", detect.Idle, t0)}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60})
+	for i, r := range rows {
+		if r.Kind == RowWindow && strings.Contains(r.Text, "6:web") {
+			if rows[i-1].Kind != RowSpacer {
+				t.Errorf("window block after subagent rows must be preceded by a spacer, got %v %q",
+					rows[i-1].Kind, rows[i-1].Text)
+			}
 		}
 	}
 }

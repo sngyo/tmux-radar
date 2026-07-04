@@ -7,9 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/sngyo/tmux-agents/internal/poller"
-	"github.com/sngyo/tmux-agents/internal/state"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/poller"
+	"github.com/sngyo/tmux-radar/internal/state"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 // Faint is avoided on purpose: with dozens of idle agents it makes the
@@ -19,12 +19,23 @@ import (
 // terminal's default foreground.
 var styles = map[RowKind]lipgloss.Style{
 	RowHeader: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
-	RowAlert:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+	// full-width band: light pink on dark red, padded to the pane in View
+	RowAlert:  lipgloss.NewStyle().Foreground(lipgloss.Color("217")).Background(lipgloss.Color("52")).Bold(true),
 	RowGroup:  lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 	RowWindow: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 	RowFold:   lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 	RowFooter: lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
+	// scraped background tasks read as secondary detail
+	RowSubagent: lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 }
+
+// currentBg marks the attached client's active window: a subtle band that
+// keeps each row's own foreground color readable on top.
+var currentBg = lipgloss.Color("236")
+
+// pendingStyle grays out agents whose pane title carries the [PENDING]
+// marker: parked on purpose, so no working green and no bold.
+var pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
 
 var displayStyles = map[state.Display]lipgloss.Style{
 	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
@@ -34,10 +45,15 @@ var displayStyles = map[state.Display]lipgloss.Style{
 }
 
 type tickMsg time.Time
+type animMsg struct{}
 type snapMsg struct {
 	snap state.Snapshot
 	err  error
 }
+
+// animInterval paces the working-glyph spinner. Fast enough to read as
+// motion, slow enough that a full redraw of a ~40-col pane costs nothing.
+const animInterval = 200 * time.Millisecond
 
 // App is the bubbletea model of the sidebar.
 type App struct {
@@ -49,6 +65,7 @@ type App struct {
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
 	width          int // pane width from the last WindowSizeMsg
+	frame          int // animation frame for the working-glyph spinner
 	err            error
 	inFlight       bool // a poll cmd is outstanding; skip re-issuing until it returns
 }
@@ -64,11 +81,15 @@ func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time
 
 func (a *App) Init() tea.Cmd {
 	a.inFlight = true
-	return tea.Batch(a.poll(), a.tick())
+	return tea.Batch(a.poll(), a.tick(), a.animTick())
 }
 
 func (a *App) tick() tea.Cmd {
 	return tea.Tick(a.interval, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func (a *App) animTick() tea.Cmd {
+	return tea.Tick(animInterval, func(time.Time) tea.Msg { return animMsg{} })
 }
 
 func (a *App) poll() tea.Cmd {
@@ -92,6 +113,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, a.poll())
 		}
 		return a, tea.Batch(cmds...)
+	case animMsg:
+		a.frame++
+		return a, a.animTick()
 	case snapMsg:
 		a.inFlight = false
 		a.err = m.err
@@ -149,17 +173,25 @@ func (a *App) View() string {
 	}
 	a.rows = Render(ViewData{
 		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix,
-		Now: time.Now(), Width: a.width,
+		Now: time.Now(), Width: a.width, Focus: a.snap.Focus, Frame: a.frame,
 	})
 	out := ""
 	for _, r := range a.rows {
-		line := r.Text
+		st := styles[r.Kind]
 		if r.Kind == RowAgent {
-			line = displayStyles[r.Display].Render(line)
-		} else {
-			line = styles[r.Kind].Render(line)
+			st = displayStyles[r.Display]
+			if r.Pending {
+				st = pendingStyle
+			}
 		}
-		out += line + "\n"
+		if r.Current {
+			st = st.Background(currentBg)
+		}
+		// background rows stretch their band across the pane
+		if (r.Kind == RowAlert || r.Current) && a.width > 0 {
+			st = st.Width(a.width)
+		}
+		out += st.Render(r.Text) + "\n"
 	}
 	return out
 }

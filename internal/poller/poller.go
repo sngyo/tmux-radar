@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/state"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/state"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 // Deps are the injectable dependencies of a poll tick.
@@ -16,23 +16,30 @@ type Deps struct {
 	Capture         func(paneID string) (string, error)
 	Rules           detect.Rules
 	ProcessPatterns []*regexp.Regexp // matched against pane_current_command
-	// active pane of the attached client; used to clear unseen-done marks
-	CurrentPane func() (string, error)
+	// active pane of the attached client; clears unseen-done marks and
+	// drives the sidebar's focused-window highlight
+	CurrentFocus func() (tmux.Focus, error)
+}
+
+// DefaultProcessPatterns matches Claude Code binaries: the plain name plus
+// the version-named binaries its auto-updater installs (e.g. "2.1.199").
+// Config defaults reuse these exact strings.
+func DefaultProcessPatterns() []string {
+	return []string{`^claude$`, `^[0-9]+\.[0-9]+\.[0-9]+$`}
 }
 
 // DefaultDeps returns production dependencies (real tmux, default rules).
-// Claude Code's auto-updater installs version-named binaries (e.g. "2.1.199"),
-// so the defaults match both the plain name and a bare version string.
 func DefaultDeps() Deps {
+	pats := make([]*regexp.Regexp, 0, len(DefaultProcessPatterns()))
+	for _, p := range DefaultProcessPatterns() {
+		pats = append(pats, regexp.MustCompile(p))
+	}
 	return Deps{
-		ListPanes: tmux.ListPanes,
-		Capture:   tmux.CapturePane,
-		Rules:     detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`^claude$`),
-			regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`),
-		},
-		CurrentPane: tmux.CurrentPaneID,
+		ListPanes:       tmux.ListPanes,
+		Capture:         tmux.CapturePane,
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: pats,
+		CurrentFocus:    tmux.CurrentFocus,
 	}
 }
 
@@ -56,13 +63,15 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		}
 		obs = append(obs, state.Observation{
 			Pane: p, Kind: p.Command, State: d.Rules.Detect(screen),
+			Subagents: detect.Subagents(screen),
 		})
 	}
 	next := state.Apply(prev, obs, now)
-	if d.CurrentPane != nil {
-		if current, err := d.CurrentPane(); err == nil {
+	if d.CurrentFocus != nil {
+		if focus, err := d.CurrentFocus(); err == nil {
+			next.Focus = focus
 			for i := range next.Agents {
-				if next.Agents[i].PaneID == current {
+				if next.Agents[i].PaneID == focus.PaneID {
 					next.Agents[i].Done = false
 				}
 			}

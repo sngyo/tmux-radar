@@ -1,4 +1,4 @@
-// Command tmux-agents watches AI coding agents running in tmux panes.
+// Command tmux-radar watches AI coding agents running in tmux panes.
 package main
 
 import (
@@ -10,12 +10,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/sngyo/tmux-agents/internal/attention"
-	"github.com/sngyo/tmux-agents/internal/config"
-	"github.com/sngyo/tmux-agents/internal/poller"
-	"github.com/sngyo/tmux-agents/internal/state"
-	tmuxpkg "github.com/sngyo/tmux-agents/internal/tmux"
-	"github.com/sngyo/tmux-agents/internal/ui"
+	"github.com/sngyo/tmux-radar/internal/attention"
+	"github.com/sngyo/tmux-radar/internal/config"
+	"github.com/sngyo/tmux-radar/internal/poller"
+	"github.com/sngyo/tmux-radar/internal/state"
+	tmuxpkg "github.com/sngyo/tmux-radar/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/ui"
 )
 
 const version = "0.1.0-dev"
@@ -32,7 +32,7 @@ func run(args []string, stdout io.Writer) int {
 	}
 	switch cmd {
 	case "version":
-		fmt.Fprintf(stdout, "tmux-agents %s\n", version)
+		fmt.Fprintf(stdout, "tmux-radar %s\n", version)
 		return 0
 	case "summary":
 		return cmdSummary(stdout)
@@ -43,7 +43,7 @@ func run(args []string, stdout io.Writer) int {
 	case "sidebar":
 		return cmdSidebar(stdout)
 	default:
-		fmt.Fprintf(stdout, "usage: tmux-agents [sidebar|summary|jump|watch|version]\n")
+		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|summary|jump|watch|version]\n")
 		return 2
 	}
 }
@@ -110,7 +110,7 @@ func cmdJump() int {
 		deps = poller.DefaultDeps() // bad regex in config: fall back
 	}
 	if w := firstNonNil(cfgErr, err); w != nil {
-		_ = tmuxpkg.DisplayMessage("tmux-agents: config warning: " + w.Error())
+		_ = tmuxpkg.DisplayMessage("tmux-radar: config warning: " + w.Error())
 	}
 	snap, err := state.Load(state.DefaultPath())
 	if err != nil || snap.Stale(now, staleFor(cfg.PollIntervalMS)) {
@@ -118,7 +118,7 @@ func cmdJump() int {
 		// transitions can still arm the done overlay on this one-shot poll.
 		snap, err = poller.RunOnce(snap, deps, now)
 		if err != nil {
-			_ = tmuxpkg.DisplayMessage("tmux-agents: " + err.Error())
+			_ = tmuxpkg.DisplayMessage("tmux-radar: " + err.Error())
 			return 1
 		}
 	}
@@ -130,7 +130,7 @@ func cmdJump() int {
 	current, _ := tmuxpkg.CurrentPaneID()
 	target, ok := attention.Next(queue, current)
 	if !ok {
-		_ = tmuxpkg.DisplayMessage("tmux-agents: nothing needs attention")
+		_ = tmuxpkg.DisplayMessage("tmux-radar: nothing needs attention")
 		return 0
 	}
 	// Same-window pane hops are visually subtle and a one-entry queue can
@@ -138,14 +138,14 @@ func cmdJump() int {
 	where := fmt.Sprintf("%d:%s (%s)", target.WindowIndex,
 		escapeFormat(target.WindowName), target.Display(now))
 	if target.PaneID == current {
-		_ = tmuxpkg.DisplayMessage("tmux-agents: already at " + where)
+		_ = tmuxpkg.DisplayMessage("tmux-radar: already at " + where)
 		return 0
 	}
 	if err := tmuxpkg.JumpTo(target.Session, target.WindowIndex, target.PaneID); err != nil {
-		_ = tmuxpkg.DisplayMessage("tmux-agents: jump failed: " + err.Error())
+		_ = tmuxpkg.DisplayMessage("tmux-radar: jump failed: " + err.Error())
 		return 1
 	}
-	_ = tmuxpkg.DisplayMessage("tmux-agents: → " + where)
+	_ = tmuxpkg.DisplayMessage("tmux-radar: → " + where)
 	return 0
 }
 

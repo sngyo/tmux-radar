@@ -6,17 +6,19 @@ import (
 	"path/filepath"
 )
 
-// DefaultPath returns ~/.cache/tmux-agents/state.json.
+// DefaultPath returns ~/.cache/tmux-radar/state.json.
 func DefaultPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "state.json"
 	}
-	return filepath.Join(home, ".cache", "tmux-agents", "state.json")
+	return filepath.Join(home, ".cache", "tmux-radar", "state.json")
 }
 
 // Save writes the snapshot atomically (temp file + rename) so concurrent
-// readers never observe partial JSON.
+// readers never observe partial JSON. The temp name is unique per call:
+// watch and sidebar save the same path concurrently, and a shared temp
+// name would let one writer rename the other's file away mid-save.
 func Save(path string, s Snapshot) error {
 	// State may reveal user activity (session/window names): owner-only perms.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -26,11 +28,25 @@ func Save(path string, s Snapshot) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	cerr := f.Close()
+	if werr != nil || cerr != nil {
+		os.Remove(tmp)
+		if werr != nil {
+			return werr
+		}
+		return cerr
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Load reads a snapshot; a missing file returns an empty snapshot and the error.

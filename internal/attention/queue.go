@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/state"
+	"github.com/sngyo/tmux-radar/internal/state"
 )
 
 // Queue returns agents needing attention: blocked first (oldest Since

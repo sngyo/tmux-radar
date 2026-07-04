@@ -1,6 +1,6 @@
-# tmux-agents
+# tmux-radar
 
-`tmux-agents` is a lightweight companion tool for tmux users who run multiple
+`tmux-radar` is a lightweight companion tool for tmux users who run multiple
 AI coding agents (Claude Code first; others later) across many windows and
 panes. It gives you a persistent agent sidebar that lives *outside* tmux
 (e.g. in a terminal split next to it), so you can always see which agents are
@@ -13,48 +13,50 @@ needs your attention, cycling through the queue on repeated presses.
 
 ```
 AGENTS                8 agents
-◆ 1 blocked — C-t a to jump     ← only when blocked > 0
-─ main ──────────────────────
+◆ 1 blocked — C-t a to jump      ← full-width alert band, only when blocked > 0
+─ main ───────────────────────
   11:web
-○ └ ✳ waiting for input
-  12:api
-● └ ✳ fixing tests
+ ○ └ ✳ waiting for input
+
+  12:api                         ← the active window is highlighted
+ ⠸ └ ✳ fixing tests              ← working rows spin
+     └ ○ general-purpose · adding coverage   ← background subagents nest deeper
+
   14:worker
-● └ ✳ building
-◆ └ reviewing PR
-─ monitor ───────────────────
-   1:claude
-● └ ✳ long-running job
-▸ _hidden — 8 agents            ← fold; click to expand; shows ◆n if any
-──────────────────────────────
-C-t a jump · click jump · read-only
+ ⠴ ├ ✳ building
+ ◆ └ reviewing PR
+─ monitor ────────────────────
+  1:claude
+ ○ └ ✳ [PENDING] parked task     ← [PENDING] titles are grayed out
+▸ _hidden — 8 agents             ← fold; click to expand; shows ◆n if any
+C-t a jump · click jump
 ```
 
 ## Install
 
 ```bash
-go install github.com/sngyo/tmux-agents/cmd/tmux-agents@latest
+go install github.com/sngyo/tmux-radar/cmd/tmux-radar@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/sngyo/tmux-agents.git
-cd tmux-agents
-go build -o tmux-agents ./cmd/tmux-agents
+git clone https://github.com/sngyo/tmux-radar.git
+cd tmux-radar
+go build -o tmux-radar ./cmd/tmux-radar
 ```
 
 ## Quick start
 
-Add the following to your host configuration, then start `tmux-agents
+Add the following to your host configuration, then start `tmux-radar
 sidebar` in a terminal split outside tmux (e.g. a Ghostty split next to your
 tmux pane).
 
 **`.tmux.conf`** — jump keybind and status-line summary:
 
 ```tmux
-bind a run-shell "tmux-agents jump"
-set -g status-right '#(tmux-agents summary) …'
+bind a run-shell "tmux-radar jump"
+set -g status-right '#(tmux-radar summary) …'
 ```
 
 **Ghostty** (optional) — toggle the sidebar split's zoom with one key:
@@ -85,11 +87,11 @@ end
 | `summary` | Prints a ready-to-render tmux status-line string (e.g. `◆1 ●3 ○2`) by reading the cached state; intended for `status-right`. Prints nothing if the state is stale or missing. |
 | `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. When nothing needs attention it falls back to touring the working agents (oldest first); only when nothing is working either does it show a status message and stay put. |
 | `watch` | Runs the poller headlessly in the foreground, writing state to disk on every tick — useful for status-line/jump support without running the sidebar TUI. |
-| `version` | Prints the `tmux-agents` version string. |
+| `version` | Prints the `tmux-radar` version string. |
 
 ## Configuration
 
-`~/.config/tmux-agents/config.toml` (all keys optional; compiled-in defaults
+`~/.config/tmux-radar/config.toml` (all keys optional; compiled-in defaults
 are used for anything omitted):
 
 ```toml
@@ -101,7 +103,7 @@ focus_return_cmd = ""   # e.g. "hs -c 'focusTmuxSplit()'"
 # Regexes matched against pane_current_command. Claude Code's auto-updater
 # installs version-named binaries ("2.1.199"), hence the version pattern.
 process_names = ['^claude$', '^[0-9]+\.[0-9]+\.[0-9]+$']
-working  = ['esc to interrupt']
+working  = ['esc to interrupt', 'Waiting for \d+ background agents? to finish']
 blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 ```
 
@@ -129,12 +131,20 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 
 | State | Rule (defaults; regex list in config) |
 |---|---|
-| `working` | Footer contains `esc to interrupt` or a running-spinner line |
+| `working` | Footer contains `esc to interrupt`, or the pane is waiting for background agents to finish |
 | `blocked` | Permission / question UI detected: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome |
 | `idle` | Agent process alive, none of the above |
 | `done` (overlay) | On a `working → idle` transition, armed as an unseen-completion marker. Displayed as `✓` until you visit the pane (C-t a / click), then plain `idle`. |
 
 Precedence: `blocked` > `working` > `done` > `idle`.
+
+Extras layered on top:
+
+- **Background subagents** — while a Claude Code pane shows its agents list
+  (`⏺ main` + task rows), those tasks are scraped and nested one level below
+  the pane's row. An unrecognized layout simply shows no subagents.
+- **`[PENDING]` marker** — put `[PENDING]` anywhere in a pane title to gray
+  the row out (parked on purpose; still tracked, just visually muted).
 
 ## License
 

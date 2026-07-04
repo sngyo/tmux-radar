@@ -4,8 +4,8 @@ package state
 import (
 	"time"
 
-	"github.com/sngyo/tmux-agents/internal/detect"
-	"github.com/sngyo/tmux-agents/internal/tmux"
+	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 // Agent is one observed agent, keyed by the immutable tmux pane id.
@@ -21,6 +21,8 @@ type Agent struct {
 	Since       time.Time    `json:"since"`
 	// unseen completion: armed on working->idle, cleared when the pane is visited
 	Done bool `json:"done,omitempty"`
+	// background tasks scraped from the pane screen, refreshed every tick
+	Subagents []detect.Subagent `json:"subagents,omitempty"`
 }
 
 // Display is what the UI shows; it layers the "done" overlay on top of State.
@@ -49,15 +51,17 @@ func (a Agent) Display(now time.Time) Display {
 
 // Observation is one pane observed during a poll tick.
 type Observation struct {
-	Pane  tmux.Pane
-	Kind  string
-	State detect.State
+	Pane      tmux.Pane
+	Kind      string
+	State     detect.State
+	Subagents []detect.Subagent
 }
 
 // Snapshot is the full state written to state.json each tick.
 type Snapshot struct {
-	GeneratedAt time.Time `json:"generated_at"`
-	Agents      []Agent   `json:"agents"`
+	GeneratedAt time.Time  `json:"generated_at"`
+	Agents      []Agent    `json:"agents"`
+	Focus       tmux.Focus `json:"focus"` // attached client's active pane at poll time
 }
 
 // Stale reports whether the snapshot is too old to trust.
@@ -80,6 +84,7 @@ func Apply(prev Snapshot, obs []Observation, now time.Time) Snapshot {
 			WindowIndex: o.Pane.WindowIndex, WindowName: o.Pane.WindowName,
 			PaneIndex: o.Pane.PaneIndex, PaneTitle: o.Pane.Title,
 			Kind: o.Kind, State: o.State, Since: now,
+			Subagents: o.Subagents,
 		}
 		if p, ok := prevByID[o.Pane.ID]; ok {
 			if p.State == o.State {

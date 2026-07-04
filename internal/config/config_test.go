@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sngyo/tmux-radar/internal/detect"
 )
 
 func write(t *testing.T, content string) string {
@@ -101,5 +103,18 @@ blocked = ['custom pattern']
 	}
 	if len(a.Blocked) != 1 || a.Blocked[0] != "custom pattern" {
 		t.Errorf("blocked override lost: %+v", a.Blocked)
+	}
+}
+
+// The sidebar builds rules from config defaults, not detect.DefaultRules,
+// so config defaults must classify the background-agent wait as working.
+func TestDefaultConfigDetectsBackgroundAgentWait(t *testing.T) {
+	rules, err := Default().DetectRules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := "✳ Waiting for 1 background agent to finish"
+	if got := rules.Detect(screen); got != detect.Working {
+		t.Errorf("got %s, want working", got)
 	}
 }

@@ -22,15 +22,30 @@ type Rules struct {
 	Blocked []*regexp.Regexp
 }
 
+// DefaultWorkingPatterns and DefaultBlockedPatterns are the canonical
+// Claude Code screen patterns. Config defaults reuse these exact strings,
+// so pattern changes land in one place and cannot drift.
+func DefaultWorkingPatterns() []string {
+	return []string{
+		`esc to interrupt`,
+		// main turn is over but spawned subagents are still running
+		`Waiting for \d+ background agents? to finish`,
+	}
+}
+
+func DefaultBlockedPatterns() []string {
+	return []string{
+		`Do you want`,
+		`❯ 1\.`,
+		`Would you like to`,
+	}
+}
+
 // DefaultRules returns the built-in Claude Code detection rules.
 func DefaultRules() Rules {
 	return Rules{
-		Working: compile(`esc to interrupt`),
-		Blocked: compile(
-			`Do you want`,
-			`❯ 1\.`,
-			`Would you like to`,
-		),
+		Working: compile(DefaultWorkingPatterns()...),
+		Blocked: compile(DefaultBlockedPatterns()...),
 	}
 }
 
@@ -73,4 +88,51 @@ func tail(s string, n int) string {
 		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// Subagent is one background task scraped from the agents list Claude Code
+// renders under its input box while background agents exist.
+type Subagent struct {
+	Type  string `json:"type"`           // e.g. "general-purpose"
+	Title string `json:"title"`          // task description
+	Done  bool   `json:"done,omitempty"` // list glyph was ✓
+}
+
+var (
+	// anchor row: "⏺ main" (glyph is U+23FA; older builds may use ●),
+	// possibly behind a selection caret like ")" or "❯"
+	subagentAnchorRe = regexp.MustCompile(`^[\s)❯>]*[⏺●○◯]\s+main\s*$`)
+	// entry rows: "◯ general-purpose  Refactor the billing report generator"
+	// (glyph is U+25EF; ✓ marks a finished task)
+	subagentEntryRe = regexp.MustCompile(`^\s*([○◯●⏺✓])\s+(\S+)\s{2,}(.+?)\s*$`)
+	// right-aligned runtime status ("1m 20s · ↓ 76.2k tokens") is separated
+	// from the title by a wide space run
+	subagentStatusRe = regexp.MustCompile(`\s{3,}`)
+)
+
+// Subagents scrapes the background-agents list from a screen. The list is
+// anchored by a "● main" row; the indented rows that follow are subagents.
+// Screen scraping is inherently version-sensitive: an unrecognized layout
+// degrades to "no subagents", never to a wrong state.
+func Subagents(screen string) []Subagent {
+	lines := strings.Split(tail(screen, tailLines), "\n")
+	start := -1
+	for i, l := range lines {
+		if subagentAnchorRe.MatchString(l) {
+			start = i // last anchor wins: it sits closest to the input box
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	var subs []Subagent
+	for _, l := range lines[start+1:] {
+		m := subagentEntryRe.FindStringSubmatch(l)
+		if m == nil {
+			break
+		}
+		title := subagentStatusRe.Split(m[3], 2)[0]
+		subs = append(subs, Subagent{Type: m[2], Title: title, Done: m[1] == "✓"})
+	}
+	return subs
 }
