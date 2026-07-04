@@ -153,6 +153,11 @@ func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
 			}
 			label = "└ " + title
 			ref = "" // window index already shown on the window's first row
+		} else if t := sanitize(a.PaneTitle); t != "" && t != label {
+			// The first row is an agent too, not just a window anchor:
+			// show its own pane title so multi-agent windows read as
+			// "N claudes", not "a window plus N-1 claudes".
+			label += " · " + t
 		}
 		prevWindow = windowKey
 		disp := a.Display(now)

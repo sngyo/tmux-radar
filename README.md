@@ -16,7 +16,7 @@ AGENTS                8 agents
 ◆ 1 blocked — C-t a to jump     ← only when blocked > 0
 ─ main ──────────────────────
 ○  11:web
-●  12:api
+●  12:api · fixing tests     ← window name + the pane's own title
 ●  14:worker
 ◆     └ reviewer             ← 2nd pane of same window: hang + pane title
 ─ monitor ───────────────────

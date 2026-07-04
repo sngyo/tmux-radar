@@ -62,6 +62,23 @@ func TestRenderWindowRefLeadsAndOmitsPaneIndex(t *testing.T) {
 	}
 }
 
+func TestRenderFirstRowShowsPaneTitle(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 5, "api", 1, "fixing tests", detect.Working, t0),
+		mk("main", 5, "api", 2, "review", detect.Idle, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60})
+	found := false
+	for _, r := range rows {
+		if r.Kind == RowAgent && strings.Contains(r.Text, "5:api · fixing tests") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error(`first pane's row should read "5:api · fixing tests"`)
+	}
+}
+
 func TestRenderStructure(t *testing.T) {
 	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
 	// header, alert (1 blocked), group main, 3 agents, group mon, 1 agent, fold, footer
