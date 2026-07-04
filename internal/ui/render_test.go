@@ -468,3 +468,28 @@ func TestRenderSpacerFollowsSubagentRows(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderPopupFooterShowsNavKeys(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0, Popup: true})
+	footer := rows[len(rows)-1]
+	if !strings.Contains(footer.Text, "esc") || !strings.Contains(footer.Text, "enter") {
+		t.Errorf("popup footer %q should hint enter/esc navigation", footer.Text)
+	}
+	rows = Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	if footer := rows[len(rows)-1]; strings.Contains(footer.Text, "enter") {
+		t.Errorf("persistent footer %q must keep the jump hint", footer.Text)
+	}
+}
+
+func TestRenderPopupAlertHintsPlainA(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0, Popup: true})
+	for _, r := range rows {
+		if r.Kind == RowAlert {
+			if strings.Contains(r.Text, "C-t") || !strings.Contains(r.Text, "a to jump") {
+				t.Errorf("popup alert %q should hint plain 'a to jump'", r.Text)
+			}
+			return
+		}
+	}
+	t.Fatal("no alert row")
+}

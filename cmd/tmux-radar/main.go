@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -41,11 +42,36 @@ func run(args []string, stdout io.Writer) int {
 	case "jump":
 		return cmdJump()
 	case "sidebar":
-		return cmdSidebar(stdout)
+		popup := len(args) > 1 && args[1] == "--popup"
+		return cmdSidebar(stdout, popup)
+	case "popup":
+		return cmdPopup(stdout)
 	default:
-		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|summary|jump|watch|version]\n")
+		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|popup|summary|jump|watch|version]\n")
 		return 2
 	}
+}
+
+// cmdPopup opens the sidebar inside a tmux display-popup. The popup closes
+// when the sidebar exits: esc/q/enter, or automatically after a click jump.
+func cmdPopup(stdout io.Writer) int {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(stdout, "popup error: %v\n", err)
+		return 1
+	}
+	cfg, _ := config.Load(config.DefaultConfigPath()) // bad config: defaults still give a usable popup
+	if err := exec.Command("tmux", popupArgs(exe, cfg.PopupWidth, cfg.PopupHeight)...).Run(); err != nil {
+		fmt.Fprintf(stdout, "popup error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// popupArgs builds the display-popup invocation wrapping `sidebar --popup`.
+func popupArgs(exe, width, height string) []string {
+	return []string{"display-popup", "-E", "-w", width, "-h", height,
+		fmt.Sprintf("%q sidebar --popup", exe)}
 }
 
 // staleFor derives the snapshot staleness window from the poll interval:
@@ -156,7 +182,7 @@ func escapeFormat(s string) string {
 }
 
 // cmdSidebar runs the bubbletea sidebar app in the current terminal.
-func cmdSidebar(stdout io.Writer) int {
+func cmdSidebar(stdout io.Writer, popup bool) int {
 	cfg, cfgErr := config.Load(config.DefaultConfigPath())
 	deps, err := cfg.PollerDeps()
 	if err != nil {
@@ -166,7 +192,7 @@ func cmdSidebar(stdout io.Writer) int {
 		fmt.Fprintf(stdout, "config warning: %v\n", firstNonNil(cfgErr, err))
 	}
 	interval := time.Duration(cfg.PollIntervalMS) * time.Millisecond
-	app := ui.NewApp(deps, cfg.FocusReturnCmd, cfg.HiddenPrefix, interval)
+	app := ui.NewApp(deps, cfg.FocusReturnCmd, cfg.HiddenPrefix, interval, popup)
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(stdout, "sidebar error: %v\n", err)

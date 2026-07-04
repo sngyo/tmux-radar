@@ -28,6 +28,9 @@ type Config struct {
 	HiddenPrefix   string                `toml:"hidden_prefix"`
 	FocusReturnCmd string                `toml:"focus_return_cmd"`
 	Agents         map[string]AgentRules `toml:"agents"`
+	// popup geometry, passed to tmux display-popup -w/-h (cells or "N%")
+	PopupWidth  string `toml:"popup_width"`
+	PopupHeight string `toml:"popup_height"`
 }
 
 // Default returns the compiled-in configuration.
@@ -35,6 +38,9 @@ func Default() Config {
 	return Config{
 		PollIntervalMS: 1000,
 		HiddenPrefix:   "_",
+		// landscape: wide enough for full pane titles, short enough to float
+		PopupWidth:  "60%",
+		PopupHeight: "60%",
 		Agents: map[string]AgentRules{
 			// Single source of truth: pattern strings live in detect/poller.
 			"claude": {
@@ -71,6 +77,12 @@ func Load(path string) (Config, error) {
 	}
 	if c.PollIntervalMS <= 0 {
 		c.PollIntervalMS = 1000
+	}
+	if c.PopupWidth == "" {
+		c.PopupWidth = Default().PopupWidth
+	}
+	if c.PopupHeight == "" {
+		c.PopupHeight = Default().PopupHeight
 	}
 	if len(c.Agents) == 0 {
 		c.Agents = Default().Agents

@@ -7,7 +7,9 @@ panes. It gives you a persistent agent sidebar that lives *outside* tmux
 working, blocked, or done without switching windows; a compact counter in the
 tmux status line that surfaces blocked agents even when the sidebar is
 hidden; and a single tmux keybind that jumps straight to whichever agent
-needs your attention, cycling through the queue on repeated presses.
+needs your attention, cycling through the queue on repeated presses. Prefer
+on-demand over always-on? The same sidebar also runs as a tmux popup with
+keyboard browsing that live-previews each agent behind it.
 
 ## Screenshot
 
@@ -59,6 +61,26 @@ bind a run-shell "tmux-radar jump"
 set -g status-right '#(tmux-radar summary) …'
 ```
 
+> The tmux server often runs with a minimal `PATH`; if the binds do
+> nothing, spell out the full binary path (e.g.
+> `~/go/bin/tmux-radar` or `~/.local/bin/tmux-radar`).
+
+**Popup mode** (optional) — prefer on-demand over always-on? Bind a key to
+open the same sidebar in a tmux popup (tmux ≥ 3.2):
+
+```tmux
+bind r run-shell -b "tmux-radar popup"
+```
+
+Inside the popup, `n`/`p` (also `C-n`/`C-p`, `j`/`k`, arrows) move a
+selection cursor — and the client *behind* the popup switches to each
+selected agent as you browse, like a live preview. `a` jumps straight to
+the next agent needing attention (same queue as `jump` — handy because a
+focused popup swallows the tmux prefix, so the usual prefix+`a` reflex
+still lands on this key). `enter` keeps the current selection and closes;
+`esc` returns to where you started and closes; a mouse click jumps and
+closes; `q` just closes.
+
 **Ghostty** (optional) — toggle the sidebar split's zoom with one key:
 
 ```ini
@@ -83,7 +105,8 @@ end
 
 | Command | Description |
 |---|---|
-| `sidebar` | Runs the bubbletea sidebar TUI in the current terminal (the default when no subcommand is given). Polls tmux panes, renders the agent list, and supports mouse-click jump. |
+| `sidebar` | Runs the bubbletea sidebar TUI in the current terminal (the default when no subcommand is given). Polls tmux panes, renders the agent list, and supports mouse-click jump. `--popup` switches to the one-shot popup behavior described above. |
+| `popup` | Opens `sidebar --popup` inside a `tmux display-popup` sized by `popup_width`/`popup_height`; the popup closes when the sidebar exits. |
 | `summary` | Prints a ready-to-render tmux status-line string (e.g. `◆1 ●3 ○2`) by reading the cached state; intended for `status-right`. Prints nothing if the state is stale or missing. |
 | `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. When nothing needs attention it falls back to touring the working agents (oldest first); only when nothing is working either does it show a status message and stay put. |
 | `watch` | Runs the poller headlessly in the foreground, writing state to disk on every tick — useful for status-line/jump support without running the sidebar TUI. |
@@ -98,6 +121,8 @@ are used for anything omitted):
 poll_interval_ms = 1000
 hidden_prefix    = "_"
 focus_return_cmd = ""   # e.g. "hs -c 'focusTmuxSplit()'"
+popup_width      = "60%" # tmux display-popup geometry: cells or "N%"
+popup_height     = "60%"
 
 [agents.claude]
 # Regexes matched against pane_current_command. Claude Code's auto-updater
@@ -116,6 +141,9 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 - `focus_return_cmd` — an optional shell command run after a mouse-click
   jump, to return keyboard focus to the terminal split hosting the sidebar
   (e.g. a Hammerspoon call); left empty (the default), nothing runs.
+- `popup_width` / `popup_height` — the `tmux-radar popup` window geometry,
+  passed straight to `display-popup -w/-h`: a cell count (`"120"`) or a
+  percentage of the client (`"60%"`). Defaults to a landscape 60% × 60%.
 - `[agents.claude]` — per-agent detection rules. A partial override (e.g. a
   config that only sets `blocked`) inherits the remaining fields
   (`process_names`, `working`) from the compiled-in defaults for that agent,

@@ -2,11 +2,13 @@ package ui
 
 import (
 	"os/exec"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/sngyo/tmux-radar/internal/attention"
 	"github.com/sngyo/tmux-radar/internal/poller"
 	"github.com/sngyo/tmux-radar/internal/state"
 	"github.com/sngyo/tmux-radar/internal/tmux"
@@ -36,6 +38,10 @@ var currentBg = lipgloss.Color("236")
 // pendingStyle grays out agents whose pane title carries the [PENDING]
 // marker: parked on purpose, so no working green and no bold.
 var pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+
+// selectionBg marks the popup's keyboard selection; brighter than the
+// focused-window band so the cursor reads on top of it.
+var selectionBg = lipgloss.Color("238")
 
 var displayStyles = map[state.Display]lipgloss.Style{
 	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
@@ -67,16 +73,31 @@ type App struct {
 	width          int // pane width from the last WindowSizeMsg
 	frame          int // animation frame for the working-glyph spinner
 	err            error
-	inFlight       bool // a poll cmd is outstanding; skip re-issuing until it returns
+	inFlight       bool       // a poll cmd is outstanding; skip re-issuing until it returns
+	popup          bool       // one-shot popup: esc closes, click jump closes after jumping
+	selPane        string     // popup selection: pane id of the highlighted agent row
+	origin         tmux.Focus // where the client was before popup browsing began
+	jump           func(session string, windowIndex int, paneID string) error
 }
 
 // NewApp builds the sidebar model. focusReturnCmd, when non-empty, runs
 // via `sh -c` after a click jump to hand focus back to the tmux split.
-func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time.Duration) *App {
+// popup makes the app one-shot for tmux display-popup: esc quits and a
+// click jump quits right after jumping (the popup would cover the target).
+func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time.Duration, popup bool) *App {
 	if interval <= 0 {
 		interval = time.Second // zero/negative would spin or stall the tick loop
 	}
-	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix, interval: interval, fold: true}
+	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix,
+		interval: interval, fold: true, popup: popup}
+}
+
+// jumpTo focuses a pane via the injected hook (tests) or the real tmux.
+func (a *App) jumpTo(session string, windowIndex int, paneID string) error {
+	if a.jump != nil {
+		return a.jump(session, windowIndex, paneID)
+	}
+	return tmux.JumpTo(session, windowIndex, paneID)
 }
 
 func (a *App) Init() tea.Cmd {
@@ -132,18 +153,85 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.String() == "q" || m.String() == "ctrl+c" {
 			return a, tea.Quit
 		}
+		if a.popup {
+			switch m.String() {
+			case "ctrl+n", "down", "j", "n":
+				a.move(1)
+			case "ctrl+p", "up", "k", "p":
+				a.move(-1)
+			case "a":
+				// attention jump, same queue as `tmux-radar jump`. Bound here
+				// because a focused popup swallows the tmux prefix — so the
+				// C-t a muscle memory still lands: C-t is ignored, a jumps.
+				now := time.Now()
+				queue := attention.Queue(a.snap.Agents, now)
+				if len(queue) == 0 {
+					queue = attention.Working(a.snap.Agents, now)
+				}
+				if target, ok := attention.Next(queue, a.snap.Focus.PaneID); ok {
+					_ = a.jumpTo(target.Session, target.WindowIndex, target.PaneID)
+					return a, tea.Quit
+				}
+			case "enter":
+				return a, tea.Quit
+			case "esc":
+				// cancel browsing: put the client back where it started
+				if a.origin.PaneID != "" {
+					_ = a.jumpTo(a.origin.Session, a.origin.WindowIndex, a.origin.PaneID)
+				}
+				return a, tea.Quit
+			}
+		}
 	case tea.MouseMsg:
 		if m.Action == tea.MouseActionRelease && m.Button == tea.MouseButtonLeft {
-			a.click(m.Y)
+			return a, a.click(m.Y)
 		}
 	}
 	return a, nil
 }
 
-// click resolves a screen line to a row and acts on it.
-func (a *App) click(y int) {
-	if y < 0 || y >= len(a.rows) {
+// move shifts the popup selection to the next/previous agent row (wrapping)
+// and switches the client behind the popup to that agent, so browsing
+// live-previews each pane. The pre-browse window is recorded once so esc
+// can put the client back.
+func (a *App) move(dir int) {
+	var panes []string
+	for _, r := range a.rows {
+		if r.Kind == RowAgent && r.PaneID != "" {
+			panes = append(panes, r.PaneID)
+		}
+	}
+	if len(panes) == 0 {
 		return
+	}
+	idx := -1
+	for i, p := range panes {
+		if p == a.selPane {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 { // no selection yet: start from the top (or bottom going up)
+		idx = -dir // 1 → 0 after +dir; -1 → len-1 after wrap
+	}
+	idx = ((idx+dir)%len(panes) + len(panes)) % len(panes)
+	if a.origin.PaneID == "" {
+		a.origin = a.snap.Focus
+	}
+	a.selPane = panes[idx]
+	for _, ag := range a.snap.Agents {
+		if ag.PaneID == a.selPane {
+			_ = a.jumpTo(ag.Session, ag.WindowIndex, ag.PaneID)
+			return
+		}
+	}
+}
+
+// click resolves a screen line to a row and acts on it. The returned
+// command is non-nil only for a popup-mode jump, which closes the popup.
+func (a *App) click(y int) tea.Cmd {
+	if y < 0 || y >= len(a.rows) {
+		return nil
 	}
 	row := a.rows[y]
 	switch {
@@ -152,7 +240,11 @@ func (a *App) click(y int) {
 	case row.PaneID != "":
 		for _, ag := range a.snap.Agents {
 			if ag.PaneID == row.PaneID {
-				_ = tmux.JumpTo(ag.Session, ag.WindowIndex, ag.PaneID)
+				_ = a.jumpTo(ag.Session, ag.WindowIndex, ag.PaneID)
+				if a.popup {
+					// the popup floats over the jump target: get out of the way
+					return tea.Quit
+				}
 				if a.focusReturnCmd != "" {
 					// focusReturnCmd is a user-authored hook from the user's own
 					// config file, executed verbatim (same trust model as tmux
@@ -161,10 +253,11 @@ func (a *App) click(y int) {
 					// ever needs context, pass it via environment variables.
 					_ = exec.Command("sh", "-c", a.focusReturnCmd).Start()
 				}
-				return
+				return nil
 			}
 		}
 	}
+	return nil
 }
 
 func (a *App) View() string {
@@ -173,7 +266,7 @@ func (a *App) View() string {
 	}
 	a.rows = Render(ViewData{
 		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix,
-		Now: time.Now(), Width: a.width, Focus: a.snap.Focus, Frame: a.frame,
+		Now: time.Now(), Width: a.width, Focus: a.snap.Focus, Frame: a.frame, Popup: a.popup,
 	})
 	out := ""
 	for _, r := range a.rows {
@@ -187,11 +280,17 @@ func (a *App) View() string {
 		if r.Current {
 			st = st.Background(currentBg)
 		}
+		text := r.Text
+		selected := a.popup && r.Kind == RowAgent && r.PaneID != "" && r.PaneID == a.selPane
+		if selected {
+			text = "❯" + strings.TrimPrefix(text, " ")
+			st = st.Background(selectionBg)
+		}
 		// background rows stretch their band across the pane
-		if (r.Kind == RowAlert || r.Current) && a.width > 0 {
+		if (r.Kind == RowAlert || r.Current || selected) && a.width > 0 {
 			st = st.Width(a.width)
 		}
-		out += st.Render(r.Text) + "\n"
+		out += st.Render(text) + "\n"
 	}
 	return out
 }

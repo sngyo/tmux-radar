@@ -118,3 +118,24 @@ func TestDefaultConfigDetectsBackgroundAgentWait(t *testing.T) {
 		t.Errorf("got %s, want working", got)
 	}
 }
+
+func TestPopupGeometryDefaultsAndOverride(t *testing.T) {
+	c := Default()
+	if c.PopupWidth != "60%" || c.PopupHeight != "60%" {
+		t.Errorf("default popup geometry = %s x %s, want 60%% x 60%%", c.PopupWidth, c.PopupHeight)
+	}
+	loaded, err := Load(write(t, "popup_width = \"120\"\npopup_height = \"80%\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.PopupWidth != "120" || loaded.PopupHeight != "80%" {
+		t.Errorf("loaded popup geometry = %s x %s", loaded.PopupWidth, loaded.PopupHeight)
+	}
+	empty, err := Load(write(t, "poll_interval_ms = 500\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.PopupWidth != "60%" || empty.PopupHeight != "60%" {
+		t.Errorf("omitted keys must fall back to defaults, got %s x %s", empty.PopupWidth, empty.PopupHeight)
+	}
+}

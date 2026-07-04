@@ -50,6 +50,7 @@ type ViewData struct {
 	Width        int        // pane width in columns; <=0 falls back to a sane default
 	Focus        tmux.Focus // active window; its rows get the current-row highlight
 	Frame        int        // animation frame; spins the working glyph
+	Popup        bool       // popup mode: the footer hints keyboard navigation
 }
 
 var icons = map[state.Display]string{
@@ -105,8 +106,12 @@ func Render(v ViewData) []Row {
 
 	rows := []Row{{Text: fmt.Sprintf("AGENTS%14d agents", len(agents)), Kind: RowHeader}}
 	if blocked > 0 {
+		hint := "C-t a to jump"
+		if v.Popup {
+			hint = "a to jump" // the popup handles the key itself; no prefix
+		}
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("◆ %d blocked — C-t a to jump", blocked), Kind: RowAlert,
+			Text: fmt.Sprintf("◆ %d blocked — %s", blocked, hint), Kind: RowAlert,
 		})
 	}
 	rows = append(rows, agentRows(visible, v, labelW)...)
@@ -135,7 +140,11 @@ func Render(v ViewData) []Row {
 		}
 	}
 
-	rows = append(rows, Row{Text: "C-t a jump · click jump", Kind: RowFooter})
+	footer := "C-t a jump · click jump"
+	if v.Popup {
+		footer = "n/p move · enter keep · esc back"
+	}
+	rows = append(rows, Row{Text: footer, Kind: RowFooter})
 	return rows
 }
 
