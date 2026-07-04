@@ -21,6 +21,7 @@ var styles = map[RowKind]lipgloss.Style{
 	RowHeader: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 	RowAlert:  lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 	RowGroup:  lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	RowWindow: lipgloss.NewStyle().Foreground(lipgloss.Color("250")),
 	RowFold:   lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 	RowFooter: lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
 }

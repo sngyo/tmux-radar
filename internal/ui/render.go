@@ -20,6 +20,7 @@ const (
 	RowHeader RowKind = iota
 	RowAlert
 	RowGroup
+	RowWindow
 	RowAgent
 	RowFold
 	RowFooter
@@ -82,9 +83,9 @@ func Render(v ViewData) []Row {
 		}
 	}
 
-	// Labels stretch to the pane width: everything left of the label costs
-	// 5 columns (icon, space, 3-column window ref).
-	labelW := v.Width - 5
+	// Labels stretch to the pane width: agent rows consume 4 columns before
+	// the title (icon, space, "└", space — e.g. "● └ ").
+	labelW := v.Width - 4
 	if v.Width <= 0 {
 		labelW = 24
 	}
@@ -128,10 +129,11 @@ func Render(v ViewData) []Row {
 	return rows
 }
 
-// agentRows emits group headers per session and one row per agent.
-// A window's first row reads like the tmux window list ("17:name");
-// its 2nd+ panes hang below with "└" and their pane title, no index.
-// Labels take the full remaining width (labelW columns).
+// agentRows emits group headers per session, one icon-less window anchor
+// row per window ("  17:name"), and one hang row per agent pane
+// ("● └ <pane title|pane N>"). The window and its panes are different
+// hierarchy levels, so every pane hangs under its window's anchor —
+// including a window's only pane — and agent count equals hang-row count.
 func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
 	var rows []Row
 	lastSession := ""
@@ -144,25 +146,20 @@ func agentRows(agents []state.Agent, now time.Time, labelW int) []Row {
 			prevWindow = ""
 		}
 		windowKey := fmt.Sprintf("%s:%d", session, a.WindowIndex)
-		label := sanitize(a.WindowName)
-		ref := fmt.Sprintf("%d:", a.WindowIndex)
-		if windowKey == prevWindow {
-			title := sanitize(a.PaneTitle)
-			if title == "" {
-				title = fmt.Sprintf("pane %d", a.PaneIndex)
-			}
-			label = "└ " + title
-			ref = "" // window index already shown on the window's first row
-		} else if t := sanitize(a.PaneTitle); t != "" && t != label {
-			// The first row is an agent too, not just a window anchor:
-			// show its own pane title so multi-agent windows read as
-			// "N claudes", not "a window plus N-1 claudes".
-			label += " · " + t
+		if windowKey != prevWindow {
+			winLabel := fmt.Sprintf("%d:%s", a.WindowIndex, sanitize(a.WindowName))
+			rows = append(rows, Row{
+				Text: "  " + truncate(winLabel, labelW+2), Kind: RowWindow, PaneID: a.PaneID,
+			})
+			prevWindow = windowKey
 		}
-		prevWindow = windowKey
+		title := sanitize(a.PaneTitle)
+		if title == "" {
+			title = fmt.Sprintf("pane %d", a.PaneIndex)
+		}
 		disp := a.Display(now)
 		rows = append(rows, Row{
-			Text: fmt.Sprintf("%s %3s%s", icons[disp], ref, truncate(label, labelW)),
+			Text: fmt.Sprintf("%s └ %s", icons[disp], truncate(title, labelW)),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID,
 		})
 	}
