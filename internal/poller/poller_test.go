@@ -26,7 +26,7 @@ func TestRunOnceFiltersAndDetects(t *testing.T) {
 		},
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		DoneTTL:         10 * time.Minute,
+		CurrentPane:     func() (string, error) { return "%elsewhere", nil },
 	}
 	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
 	s, err := RunOnce(state.Snapshot{}, d, now)
@@ -51,7 +51,7 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 		},
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		DoneTTL:         10 * time.Minute,
+		CurrentPane:     func() (string, error) { return "%elsewhere", nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -59,6 +59,38 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 	}
 	if len(s.Agents) != 0 {
 		t.Errorf("agents = %d, want 0", len(s.Agents))
+	}
+}
+
+func TestRunOnceClearsDoneOnVisitedPane(t *testing.T) {
+	prev := state.Snapshot{Agents: []state.Agent{
+		{PaneID: "%1", State: detect.Idle, Done: true},
+		{PaneID: "%2", State: detect.Idle, Done: true},
+	}}
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Command: "claude"}, {ID: "%2", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return "idle prompt", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentPane:     func() (string, error) { return "%1", nil },
+	}
+	s, err := RunOnce(prev, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range s.Agents {
+		switch a.PaneID {
+		case "%1":
+			if a.Done {
+				t.Error("visited pane %1 must have Done cleared")
+			}
+		case "%2":
+			if !a.Done {
+				t.Error("unvisited pane %2 must keep Done")
+			}
+		}
 	}
 }
 

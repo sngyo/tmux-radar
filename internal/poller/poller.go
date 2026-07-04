@@ -16,7 +16,8 @@ type Deps struct {
 	Capture         func(paneID string) (string, error)
 	Rules           detect.Rules
 	ProcessPatterns []*regexp.Regexp // matched against pane_current_command
-	DoneTTL         time.Duration
+	// active pane of the attached client; used to clear unseen-done marks
+	CurrentPane func() (string, error)
 }
 
 // DefaultDeps returns production dependencies (real tmux, default rules).
@@ -31,12 +32,14 @@ func DefaultDeps() Deps {
 			regexp.MustCompile(`^claude$`),
 			regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`),
 		},
-		DoneTTL: 10 * time.Minute,
+		CurrentPane: tmux.CurrentPaneID,
 	}
 }
 
 // RunOnce observes every agent pane and merges the result into prev.
-// A pane that fails to capture (e.g. it died mid-tick) is skipped.
+// A pane that fails to capture (e.g. it died mid-tick) is skipped. Visiting
+// a pane marks its completion as seen: if the attached client's active pane
+// is one of the observed agents, its Done mark is cleared this tick.
 func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error) {
 	panes, err := d.ListPanes()
 	if err != nil {
@@ -55,7 +58,17 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 			Pane: p, Kind: p.Command, State: d.Rules.Detect(screen),
 		})
 	}
-	return state.Apply(prev, obs, now, d.DoneTTL), nil
+	next := state.Apply(prev, obs, now)
+	if d.CurrentPane != nil {
+		if current, err := d.CurrentPane(); err == nil {
+			for i := range next.Agents {
+				if next.Agents[i].PaneID == current {
+					next.Agents[i].Done = false
+				}
+			}
+		}
+	}
+	return next, nil
 }
 
 func matches(patterns []*regexp.Regexp, command string) bool {

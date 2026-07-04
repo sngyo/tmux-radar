@@ -90,7 +90,6 @@ are used for anything omitted):
 
 ```toml
 poll_interval_ms = 1000
-done_ttl_min     = 10
 hidden_prefix    = "_"
 focus_return_cmd = ""   # e.g. "hs -c 'focusTmuxSplit()'"
 
@@ -105,8 +104,6 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 - `poll_interval_ms` — how often, in milliseconds, the poller re-scans tmux
   panes and re-evaluates each agent's state. The staleness window used by
   `summary` and `jump` scales with this value (3× the interval, minimum 3s).
-- `done_ttl_min` — how many minutes an agent that just finished (transitioned
-  `working` → `idle`) is shown as `done` before reverting to plain `idle`.
 - `hidden_prefix` — window-name prefix that gets folded into a single
   collapsible row in the sidebar; setting it to `""` disables folding
   entirely, so every window is always shown expanded.
@@ -131,7 +128,7 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 | `working` | Footer contains `esc to interrupt` or a running-spinner line |
 | `blocked` | Permission / question UI detected: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome |
 | `idle` | Agent process alive, none of the above |
-| `done` (overlay) | On a `working → idle` transition, set `DoneUntil = now + done_ttl` (default 10 min). Displayed as `✓` until it expires, then plain `idle`. |
+| `done` (overlay) | On a `working → idle` transition, armed as an unseen-completion marker. Displayed as `✓` until you visit the pane (C-t a / click), then plain `idle`. |
 
 Precedence: `blocked` > `working` > `done` > `idle`.
 

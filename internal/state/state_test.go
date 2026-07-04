@@ -21,7 +21,7 @@ func obs(id string, st detect.State) Observation {
 }
 
 func TestApplyNewAgentSetsSince(t *testing.T) {
-	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0, 10*time.Minute)
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
 	if len(s.Agents) != 1 {
 		t.Fatalf("agents = %d, want 1", len(s.Agents))
 	}
@@ -32,38 +32,38 @@ func TestApplyNewAgentSetsSince(t *testing.T) {
 }
 
 func TestApplyWorkingToIdleProducesDone(t *testing.T) {
-	prev := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0, 10*time.Minute)
-	next := Apply(prev, []Observation{obs("%1", detect.Idle)}, t0.Add(time.Minute), 10*time.Minute)
+	prev := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
+	next := Apply(prev, []Observation{obs("%1", detect.Idle)}, t0.Add(time.Minute))
 	a := next.Agents[0]
 	if a.Display(t0.Add(2*time.Minute)) != DisplayDone {
 		t.Errorf("display = %s, want done", a.Display(t0.Add(2*time.Minute)))
 	}
-	// done expires after the TTL
-	if a.Display(t0.Add(12*time.Minute)) != DisplayIdle {
-		t.Errorf("after TTL: display = %s, want idle", a.Display(t0.Add(12*time.Minute)))
+	// done persists indefinitely: no TTL, still done far later.
+	if a.Display(t0.Add(12*time.Hour)) != DisplayDone {
+		t.Errorf("far later: display = %s, want done", a.Display(t0.Add(12*time.Hour)))
 	}
 }
 
 func TestApplyBackToWorkingClearsDone(t *testing.T) {
-	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0, 10*time.Minute)
-	s = Apply(s, []Observation{obs("%1", detect.Idle)}, t0.Add(time.Minute), 10*time.Minute)
-	s = Apply(s, []Observation{obs("%1", detect.Working)}, t0.Add(2*time.Minute), 10*time.Minute)
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
+	s = Apply(s, []Observation{obs("%1", detect.Idle)}, t0.Add(time.Minute))
+	s = Apply(s, []Observation{obs("%1", detect.Working)}, t0.Add(2*time.Minute))
 	if got := s.Agents[0].Display(t0.Add(3 * time.Minute)); got != DisplayWorking {
 		t.Errorf("display = %s, want working", got)
 	}
 }
 
 func TestApplyDropsVanishedPanes(t *testing.T) {
-	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0, 10*time.Minute)
-	s = Apply(s, nil, t0.Add(time.Minute), 10*time.Minute)
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
+	s = Apply(s, nil, t0.Add(time.Minute))
 	if len(s.Agents) != 0 {
 		t.Errorf("agents = %d, want 0", len(s.Agents))
 	}
 }
 
 func TestUnchangedStateKeepsSince(t *testing.T) {
-	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0, 10*time.Minute)
-	s = Apply(s, []Observation{obs("%1", detect.Working)}, t0.Add(time.Minute), 10*time.Minute)
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Working)}, t0)
+	s = Apply(s, []Observation{obs("%1", detect.Working)}, t0.Add(time.Minute))
 	if !s.Agents[0].Since.Equal(t0) {
 		t.Errorf("since = %v, want %v", s.Agents[0].Since, t0)
 	}
@@ -71,7 +71,7 @@ func TestUnchangedStateKeepsSince(t *testing.T) {
 
 func TestSaveLoadRoundTripAndStale(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
-	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Blocked)}, t0, 10*time.Minute)
+	s := Apply(Snapshot{}, []Observation{obs("%1", detect.Blocked)}, t0)
 	if err := Save(path, s); err != nil {
 		t.Fatal(err)
 	}

@@ -10,18 +10,18 @@ import (
 
 var t0 = time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
 
-func ag(id string, st detect.State, since time.Time, doneUntil time.Time) state.Agent {
-	return state.Agent{PaneID: id, State: st, Since: since, DoneUntil: doneUntil}
+func ag(id string, st detect.State, since time.Time, done bool) state.Agent {
+	return state.Agent{PaneID: id, State: st, Since: since, Done: done}
 }
 
 func TestQueueOrdersBlockedThenDoneOldestFirst(t *testing.T) {
 	agents := []state.Agent{
-		ag("%idle", detect.Idle, t0, time.Time{}),
-		ag("%done-old", detect.Idle, t0.Add(-2*time.Minute), t0.Add(time.Hour)),
-		ag("%blocked-new", detect.Blocked, t0.Add(-time.Minute), time.Time{}),
-		ag("%working", detect.Working, t0, time.Time{}),
-		ag("%blocked-old", detect.Blocked, t0.Add(-5*time.Minute), time.Time{}),
-		ag("%done-new", detect.Idle, t0.Add(-time.Minute), t0.Add(time.Hour)),
+		ag("%idle", detect.Idle, t0, false),
+		ag("%done-old", detect.Idle, t0.Add(-2*time.Minute), true),
+		ag("%blocked-new", detect.Blocked, t0.Add(-time.Minute), false),
+		ag("%working", detect.Working, t0, false),
+		ag("%blocked-old", detect.Blocked, t0.Add(-5*time.Minute), false),
+		ag("%done-new", detect.Idle, t0.Add(-time.Minute), true),
 	}
 	q := Queue(agents, t0)
 	want := []string{"%blocked-old", "%blocked-new", "%done-old", "%done-new"}
@@ -36,7 +36,7 @@ func TestQueueOrdersBlockedThenDoneOldestFirst(t *testing.T) {
 }
 
 func TestNextFromOutsideQueueReturnsHead(t *testing.T) {
-	q := []state.Agent{ag("%a", detect.Blocked, t0, time.Time{}), ag("%b", detect.Blocked, t0, time.Time{})}
+	q := []state.Agent{ag("%a", detect.Blocked, t0, false), ag("%b", detect.Blocked, t0, false)}
 	got, ok := Next(q, "%elsewhere")
 	if !ok || got.PaneID != "%a" {
 		t.Errorf("got %v %v, want %%a", got.PaneID, ok)
@@ -44,7 +44,7 @@ func TestNextFromOutsideQueueReturnsHead(t *testing.T) {
 }
 
 func TestNextCyclesFromCurrent(t *testing.T) {
-	q := []state.Agent{ag("%a", detect.Blocked, t0, time.Time{}), ag("%b", detect.Blocked, t0, time.Time{})}
+	q := []state.Agent{ag("%a", detect.Blocked, t0, false), ag("%b", detect.Blocked, t0, false)}
 	if got, _ := Next(q, "%a"); got.PaneID != "%b" {
 		t.Errorf("from %%a got %s, want %%b", got.PaneID)
 	}

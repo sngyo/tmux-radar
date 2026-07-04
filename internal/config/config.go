@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -24,7 +23,6 @@ type AgentRules struct {
 // Config mirrors config.toml. Zero values are replaced by Default().
 type Config struct {
 	PollIntervalMS int `toml:"poll_interval_ms"`
-	DoneTTLMin     int `toml:"done_ttl_min"`
 	// HiddenPrefix folds windows whose name starts with it; explicitly
 	// setting "" disables folding (kept verbatim, not defaulted).
 	HiddenPrefix   string                `toml:"hidden_prefix"`
@@ -36,7 +34,6 @@ type Config struct {
 func Default() Config {
 	return Config{
 		PollIntervalMS: 1000,
-		DoneTTLMin:     10,
 		HiddenPrefix:   "_",
 		Agents: map[string]AgentRules{
 			"claude": {
@@ -75,9 +72,6 @@ func Load(path string) (Config, error) {
 	}
 	if c.PollIntervalMS <= 0 {
 		c.PollIntervalMS = 1000
-	}
-	if c.DoneTTLMin <= 0 {
-		c.DoneTTLMin = 10
 	}
 	if len(c.Agents) == 0 {
 		c.Agents = Default().Agents
@@ -150,6 +144,6 @@ func (c Config) PollerDeps() (poller.Deps, error) {
 		Capture:         tmux.CapturePane,
 		Rules:           rules,
 		ProcessPatterns: pats,
-		DoneTTL:         time.Duration(c.DoneTTLMin) * time.Minute,
+		CurrentPane:     tmux.CurrentPaneID,
 	}, nil
 }

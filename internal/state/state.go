@@ -19,7 +19,8 @@ type Agent struct {
 	Kind        string       `json:"kind"`
 	State       detect.State `json:"state"`
 	Since       time.Time    `json:"since"`
-	DoneUntil   time.Time    `json:"done_until,omitempty"`
+	// unseen completion: armed on working->idle, cleared when the pane is visited
+	Done bool `json:"done,omitempty"`
 }
 
 // Display is what the UI shows; it layers the "done" overlay on top of State.
@@ -40,7 +41,7 @@ func (a Agent) Display(now time.Time) Display {
 	case detect.Working:
 		return DisplayWorking
 	}
-	if a.DoneUntil.After(now) {
+	if a.Done {
 		return DisplayDone
 	}
 	return DisplayIdle
@@ -65,8 +66,9 @@ func (s Snapshot) Stale(now time.Time, ttl time.Duration) bool {
 }
 
 // Apply merges observations into the previous snapshot. Vanished panes are
-// dropped; a working→idle transition arms the done overlay for doneTTL.
-func Apply(prev Snapshot, obs []Observation, now time.Time, doneTTL time.Duration) Snapshot {
+// dropped; a working→idle transition arms the unseen-done marker, which
+// persists until something else (a pane visit) clears it.
+func Apply(prev Snapshot, obs []Observation, now time.Time) Snapshot {
 	prevByID := make(map[string]Agent, len(prev.Agents))
 	for _, a := range prev.Agents {
 		prevByID[a.PaneID] = a
@@ -83,12 +85,12 @@ func Apply(prev Snapshot, obs []Observation, now time.Time, doneTTL time.Duratio
 			if p.State == o.State {
 				a.Since = p.Since
 			}
-			a.DoneUntil = p.DoneUntil
+			a.Done = p.Done
 			if p.State == detect.Working && o.State == detect.Idle {
-				a.DoneUntil = now.Add(doneTTL)
+				a.Done = true
 			}
 			if o.State == detect.Working {
-				a.DoneUntil = time.Time{}
+				a.Done = false
 			}
 		}
 		next.Agents = append(next.Agents, a)

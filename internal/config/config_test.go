@@ -20,21 +20,21 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing file must not error, got %v", err)
 	}
-	if c.PollIntervalMS != 1000 || c.DoneTTLMin != 10 || c.HiddenPrefix != "_" {
+	if c.PollIntervalMS != 1000 || c.HiddenPrefix != "_" {
 		t.Errorf("defaults wrong: %+v", c)
 	}
 }
 
 func TestLoadPartialFileMergesDefaults(t *testing.T) {
-	p := write(t, "done_ttl_min = 30\n")
+	p := write(t, "poll_interval_ms = 2000\n")
 	c, err := Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DoneTTLMin != 30 {
+	if c.PollIntervalMS != 2000 {
 		t.Errorf("override lost: %+v", c)
 	}
-	if c.PollIntervalMS != 1000 {
+	if c.HiddenPrefix != "_" {
 		t.Errorf("default lost: %+v", c)
 	}
 }
