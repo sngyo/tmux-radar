@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -132,11 +133,26 @@ func cmdJump() int {
 		_ = tmuxpkg.DisplayMessage("tmux-agents: nothing needs attention")
 		return 0
 	}
+	// Same-window pane hops are visually subtle and a one-entry queue can
+	// target the pane we are already on — always say what happened.
+	where := fmt.Sprintf("%d:%s (%s)", target.WindowIndex,
+		escapeFormat(target.WindowName), target.Display(now))
+	if target.PaneID == current {
+		_ = tmuxpkg.DisplayMessage("tmux-agents: already at " + where)
+		return 0
+	}
 	if err := tmuxpkg.JumpTo(target.Session, target.WindowIndex, target.PaneID); err != nil {
 		_ = tmuxpkg.DisplayMessage("tmux-agents: jump failed: " + err.Error())
 		return 1
 	}
+	_ = tmuxpkg.DisplayMessage("tmux-agents: → " + where)
 	return 0
+}
+
+// escapeFormat doubles '#' so window names cannot inject tmux format
+// expansions into display-message output.
+func escapeFormat(s string) string {
+	return strings.ReplaceAll(s, "#", "##")
 }
 
 // cmdSidebar runs the bubbletea sidebar app in the current terminal.
