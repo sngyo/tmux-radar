@@ -1,7 +1,10 @@
 // Package detect classifies an agent pane from its visible screen content.
 package detect
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // State is the raw detected state of an agent pane.
 type State string
@@ -39,9 +42,17 @@ func compile(patterns ...string) []*regexp.Regexp {
 	return rs
 }
 
-// Detect classifies a screen. Blocked wins over working: a permission
-// prompt can appear while the spinner footer is still visible.
+// tailLines bounds detection to the bottom of the screen: dialogs and the
+// running footer render near the input box, while conversation history
+// higher up can echo the same phrases (e.g. a quoted "❯ 1." option list)
+// and must not keep an agent looking blocked after the dialog is answered.
+const tailLines = 30
+
+// Detect classifies a screen from its bottom tailLines lines. Blocked wins
+// over working: a permission prompt can appear while the spinner footer is
+// still visible.
 func (r Rules) Detect(screen string) State {
+	screen = tail(screen, tailLines)
 	for _, re := range r.Blocked {
 		if re.MatchString(screen) {
 			return Blocked
@@ -53,4 +64,13 @@ func (r Rules) Detect(screen string) State {
 		}
 	}
 	return Idle
+}
+
+// tail returns the last n lines of s.
+func tail(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }

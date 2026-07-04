@@ -3,6 +3,7 @@ package detect
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +39,16 @@ func TestBlockedBeatsWorking(t *testing.T) {
 	screen := fixture(t, "working.txt") + "\n" + fixture(t, "blocked_permission.txt")
 	if got := DefaultRules().Detect(screen); got != Blocked {
 		t.Errorf("got %s, want blocked", got)
+	}
+}
+
+// Conversation history above the bottom tail can quote dialog-like text
+// (e.g. a past numbered user message rendered with "❯ 1."); it must not
+// keep the agent looking blocked once the actual dialog is gone.
+func TestDetectIgnoresHistoryAboveTail(t *testing.T) {
+	history := "❯ 1. an old quoted option list\n" + strings.Repeat("plain output line\n", 40)
+	screen := history + fixture(t, "idle.txt")
+	if got := DefaultRules().Detect(screen); got != Idle {
+		t.Errorf("got %s, want idle (history above the tail must not match)", got)
 	}
 }
