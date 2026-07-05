@@ -193,14 +193,15 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID, Current: current,
 			Pending: strings.Contains(strings.ToUpper(title), "[PENDING]"),
 		})
-		rows = append(rows, subagentRows(a, labelW, current)...)
+		rows = append(rows, subagentRows(a, labelW, current, v.Frame)...)
 	}
 	return rows
 }
 
 // subagentRows nests an agent's scraped background tasks one level deeper
-// than its hang row: "     ├ ○ general-purpose · task title".
-func subagentRows(a state.Agent, labelW int, current bool) []Row {
+// than its hang row: "     ├ ○ general-purpose · task title". A running task
+// spins like its parent; a finished one shows ✓; a queued one stays ○.
+func subagentRows(a state.Agent, labelW int, current bool, frame int) []Row {
 	var rows []Row
 	for i, s := range a.Subagents {
 		branch := "└"
@@ -208,8 +209,11 @@ func subagentRows(a state.Agent, labelW int, current bool) []Row {
 			branch = "├"
 		}
 		icon := "○"
-		if s.Done {
+		switch {
+		case s.Done:
 			icon = "✓"
+		case s.Working:
+			icon = spinnerFrames[((frame%len(spinnerFrames))+len(spinnerFrames))%len(spinnerFrames)]
 		}
 		budget := labelW - 4 // the child prefix is 4 columns wider than the parent's
 		if budget < 8 {

@@ -60,7 +60,7 @@ func TestSubagentsScrapesTaskList(t *testing.T) {
 	if len(subs) != 1 {
 		t.Fatalf("subagents = %d, want 1: %+v", len(subs), subs)
 	}
-	want := Subagent{Type: "general-purpose", Title: "Refactor the billing report generator"}
+	want := Subagent{Type: "general-purpose", Title: "Refactor the billing report generator", Working: true}
 	if subs[0] != want {
 		t.Errorf("got %+v, want %+v", subs[0], want)
 	}
@@ -76,6 +76,32 @@ func TestSubagentsIgnoresPlainConversation(t *testing.T) {
 		if subs := Subagents(s); len(subs) != 0 {
 			t.Errorf("screen %q: unexpected subagents %+v", s[:40], subs)
 		}
+	}
+}
+
+// A subagent with a live runtime-status tail ("5m 39s · ↓ 105k tokens") is
+// actively running; ✓ (done) wins over a lingering tail; a bare ○ with no
+// tail is queued/idle.
+func TestSubagentsMarksWorkingEntries(t *testing.T) {
+	screen := "  ⏺ main\n" +
+		"  ◯ general-purpose  RLS rollout: tasks surface   5m 39s · ↓ 105.4k tokens\n" +
+		"  ✓ Explore  finished mapping   1m 2s · ↓ 5.0k tokens\n" +
+		"  ◯ general-purpose  queued, not started yet\n"
+	subs := Subagents(screen)
+	if len(subs) != 3 {
+		t.Fatalf("subagents = %d, want 3: %+v", len(subs), subs)
+	}
+	if !subs[0].Working || subs[0].Done {
+		t.Errorf("running entry should be Working and not Done: %+v", subs[0])
+	}
+	if subs[0].Title != "RLS rollout: tasks surface" {
+		t.Errorf("title must drop the runtime tail, got %q", subs[0].Title)
+	}
+	if subs[1].Working || !subs[1].Done {
+		t.Errorf("done ✓ must win over a lingering tail: %+v", subs[1])
+	}
+	if subs[2].Working || subs[2].Done {
+		t.Errorf("tail-less ○ entry should be idle: %+v", subs[2])
 	}
 }
 

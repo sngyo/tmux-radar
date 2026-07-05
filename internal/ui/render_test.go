@@ -454,6 +454,39 @@ func TestRenderSubagentRowsNestDeeper(t *testing.T) {
 	}
 }
 
+func TestRenderSubagentWorkingIconAnimates(t *testing.T) {
+	a := mk("main", 5, "api", 1, "orchestrating", detect.Working, t0)
+	a.Subagents = []detect.Subagent{
+		{Type: "general-purpose", Title: "running task", Working: true},
+		{Type: "Explore", Title: "finished task", Done: true},
+		{Type: "general-purpose", Title: "queued task"},
+	}
+	subs := func(frame int) []Row {
+		rows := Render(ViewData{Agents: []state.Agent{a}, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60, Frame: frame})
+		var out []Row
+		for _, r := range rows {
+			if r.Kind == RowSubagent {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	glyph := func(r Row) string { return strings.Fields(r.Text)[1] } // "├ <glyph> type · title"
+	s0, s1 := subs(0), subs(1)
+	if len(s0) != 3 || len(s1) != 3 {
+		t.Fatalf("want 3 subagent rows, got %d/%d", len(s0), len(s1))
+	}
+	if glyph(s0[0]) == glyph(s1[0]) {
+		t.Errorf("working subagent glyph must animate: %q vs %q", glyph(s0[0]), glyph(s1[0]))
+	}
+	if glyph(s0[1]) != "✓" || glyph(s1[1]) != "✓" {
+		t.Errorf("done subagent must stay ✓, got %q/%q", glyph(s0[1]), glyph(s1[1]))
+	}
+	if glyph(s0[2]) != "○" || glyph(s1[2]) != "○" {
+		t.Errorf("queued subagent must stay ○, got %q/%q", glyph(s0[2]), glyph(s1[2]))
+	}
+}
+
 func TestRenderSpacerFollowsSubagentRows(t *testing.T) {
 	withSubs := mk("main", 5, "api", 1, "orchestrating", detect.Working, t0)
 	withSubs.Subagents = []detect.Subagent{{Type: "Explore", Title: "Map the loaders"}}

@@ -97,9 +97,10 @@ func tail(s string, n int) string {
 // Subagent is one background task scraped from the agents list Claude Code
 // renders under its input box while background agents exist.
 type Subagent struct {
-	Type  string `json:"type"`           // e.g. "general-purpose"
-	Title string `json:"title"`          // task description
-	Done  bool   `json:"done,omitempty"` // list glyph was ✓
+	Type    string `json:"type"`              // e.g. "general-purpose"
+	Title   string `json:"title"`             // task description
+	Working bool   `json:"working,omitempty"` // has a live runtime tail (elapsed/tokens)
+	Done    bool   `json:"done,omitempty"`    // list glyph was ✓
 }
 
 var (
@@ -135,8 +136,13 @@ func Subagents(screen string) []Subagent {
 		if m == nil {
 			break
 		}
-		title := subagentStatusRe.Split(m[3], 2)[0]
-		subs = append(subs, Subagent{Type: m[2], Title: title, Done: m[1] == "✓"})
+		parts := subagentStatusRe.Split(m[3], 2)
+		done := m[1] == "✓"
+		// A running task carries a live runtime tail ("5m 39s · ↓ 105k
+		// tokens") after the title; ✓ (done) takes precedence over a tail
+		// that may linger on a just-finished row.
+		working := !done && len(parts) == 2 && strings.TrimSpace(parts[1]) != ""
+		subs = append(subs, Subagent{Type: m[2], Title: parts[0], Working: working, Done: done})
 	}
 	return subs
 }
