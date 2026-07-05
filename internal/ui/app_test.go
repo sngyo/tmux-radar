@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
 	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/poller"
 	"github.com/sngyo/tmux-radar/internal/state"
 	"github.com/sngyo/tmux-radar/internal/tmux"
 )
@@ -106,6 +108,24 @@ func TestViewGraysOutPendingRows(t *testing.T) {
 	}
 	if !strings.Contains(workingLine, "32") {
 		t.Errorf("working row should stay green: %q", workingLine)
+	}
+}
+
+// A freshly spawned app (notably the popup) must inherit the last saved
+// snapshot as its poll baseline. Without it, its first tick has no prev, so
+// working->idle "done" overlays accumulated by the long-lived sidebar cannot
+// be reproduced and the two panes diverge (a done ✓ shows as a plain idle ○).
+func TestNewAppSeedsPrevFromDisk(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	seed := state.Snapshot{GeneratedAt: t0, Agents: []state.Agent{
+		{PaneID: "%api", Session: "s", WindowIndex: 1, WindowName: "api", State: detect.Idle, Done: true},
+	}}
+	if err := state.Save(state.DefaultPath(), seed); err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(poller.Deps{}, "", "", time.Second, true)
+	if len(a.snap.Agents) != 1 || !a.snap.Agents[0].Done {
+		t.Fatalf("NewApp must seed snap from disk with the done mark, got %+v", a.snap)
 	}
 }
 

@@ -88,8 +88,16 @@ func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time
 	if interval <= 0 {
 		interval = time.Second // zero/negative would spin or stall the tick loop
 	}
+	// Seed the poll baseline from the last saved snapshot so a fresh process
+	// inherits the "done" overlays and Since history the long-lived sidebar
+	// accumulated. The popup is short-lived and would otherwise start with an
+	// empty prev, unable to reproduce any working->idle completion that
+	// happened before it opened — and its first save would clobber those
+	// marks in state.json for the status line and jump. A missing/corrupt
+	// file yields a zero snapshot: the first poll then rebuilds from scratch.
+	snap, _ := state.Load(state.DefaultPath())
 	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix,
-		interval: interval, fold: true, popup: popup}
+		interval: interval, fold: true, popup: popup, snap: snap}
 }
 
 // jumpTo focuses a pane via the injected hook (tests) or the real tmux.
