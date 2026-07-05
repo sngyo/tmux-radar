@@ -1,0 +1,11 @@
+● 進行中です (rollout=in_progress)。build が起動しました。完走まで待ちます。
+
+✻ Crunched for 4s · 1 monitor still running
+
+How is Claude doing this session? (optional)
+1: Bad   2: Fine   3: Good   0: Dismiss
+
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ⏵⏵ auto mode on · 1 monitor · ← for agents · ↓ to manage
