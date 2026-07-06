@@ -1,0 +1,21 @@
+  - merge は git 変更のみでデプロイしない。
+  - Neo の deploy は --selector name=jinbaappneo でjinbaappneo だけ apply。
+
+  この「共有 pin が前進する」点すら避けたいかどうかで、PR の作り方が変わります。
+
+────────────────────────────────────────────────────────────────────────────
+ ☐ pin 方式
+
+chartRef の pin 方式をどちらにしますか？（flow など他 chart の pin を動かすか変わります）
+
+ 1. 共有 pin を前進（既存規約     ┌──────────────────────────────┐
+   どおり・推奨）                 │ helmfile.common.yaml.gotmpl: │
+  2. neo 専用 pin で完全分離      │ - $chartRef := "455c957b..." │
+                                  └──────────────────────────────┘
+
+                                  Notes: press n to add notes
+
+────────────────────────────────────────────────────────────────────────────
+  Chat about this
+
+Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel

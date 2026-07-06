@@ -27,6 +27,7 @@ func TestDetect(t *testing.T) {
 		{"working_monitor.txt", Working},
 		{"blocked_permission.txt", Blocked},
 		{"blocked_question.txt", Blocked},
+		{"blocked_askquestion.txt", Blocked},
 		{"idle.txt", Idle},
 	}
 	for _, c := range cases {
@@ -52,6 +53,22 @@ func TestDetectIgnoresHistoryAboveTail(t *testing.T) {
 	screen := history + fixture(t, "idle.txt")
 	if got := DefaultRules().Detect(screen); got != Idle {
 		t.Errorf("got %s, want idle (history above the tail must not match)", got)
+	}
+}
+
+// An AskUserQuestion card counts as blocked only while its footer is the last
+// non-blank line (the live input region). A pane that merely quotes the footer
+// in conversation — or has already answered the card — keeps a live input box
+// (working footer) at the bottom, and must not stay pinned as blocked.
+func TestDetectAskQuestionOnlyWhenFooterIsLast(t *testing.T) {
+	quoted := "let me explain: the card footer reads " +
+		"Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel\n" +
+		strings.Repeat("more assistant output\n", 5) +
+		"✽ Zigzagging… (3m 20s · ↓ 10.0k tokens)\n\n" +
+		"❯ \n" +
+		"  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents\n"
+	if got := DefaultRules().Detect(quoted); got != Working {
+		t.Errorf("got %s, want working (quoted card footer above a live input box)", got)
 	}
 }
 

@@ -45,6 +45,16 @@ func DefaultBlockedPatterns() []string {
 	}
 }
 
+// askQuestionFooterRe matches the interactive footer Claude Code renders at the
+// very bottom of a live AskUserQuestion card ("Enter to select · ↑/↓ to
+// navigate · … · Esc to cancel"). The card carries an arbitrary, often
+// non-English question and numbered options with no "❯ 1." caret, so this
+// footer is the only stable, language-independent signal. It is matched ONLY
+// against the last non-blank line (see Detect): once the card is answered — or
+// merely quoted in the conversation — a live input box sits below it, so the
+// footer is no longer last and the agent is not blocked.
+var askQuestionFooterRe = regexp.MustCompile(`^\s*Enter to select\b`)
+
 // DefaultRules returns the built-in Claude Code detection rules.
 func DefaultRules() Rules {
 	return Rules{
@@ -72,6 +82,11 @@ const tailLines = 30
 // still visible.
 func (r Rules) Detect(screen string) State {
 	screen = tail(screen, tailLines)
+	// A live AskUserQuestion card owns the input region: its footer is the
+	// last non-blank line. Answered or quoted cards sit above a live input box.
+	if askQuestionFooterRe.MatchString(lastNonBlankLine(screen)) {
+		return Blocked
+	}
 	for _, re := range r.Blocked {
 		if re.MatchString(screen) {
 			return Blocked
@@ -83,6 +98,18 @@ func (r Rules) Detect(screen string) State {
 		}
 	}
 	return Idle
+}
+
+// lastNonBlankLine returns the final line of s that has non-whitespace content
+// (capture-pane pads the screen with trailing blank lines and trailing spaces).
+func lastNonBlankLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			return lines[i]
+		}
+	}
+	return ""
 }
 
 // tail returns the last n lines of s.
