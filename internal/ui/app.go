@@ -77,6 +77,7 @@ type App struct {
 	inFlight       bool       // a poll cmd is outstanding; skip re-issuing until it returns
 	popup          bool       // one-shot popup: esc closes, click jump closes after jumping
 	selPane        string     // popup selection: pane id of the highlighted agent row
+	seeded         bool       // popup: initial selection was placed after the first good poll
 	origin         tmux.Focus // where the client was before popup browsing began
 	jump           func(session string, windowIndex int, paneID string) error
 }
@@ -154,6 +155,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.err == nil && !m.snap.GeneratedAt.Before(a.snap.GeneratedAt) {
 			a.snap = m.snap
 		}
+		// Seed the popup's cursor once, on the first successful poll: start
+		// browsing from where the client already is instead of the list top.
+		// Cursor only — no live-preview jump, and origin stays unset so esc
+		// before any manual move keeps doing nothing.
+		if a.popup && !a.seeded && m.err == nil {
+			a.selPane = nearestPane(a.snap.Agents, a.snap.Focus, a.hiddenPrefix, a.fold)
+			a.seeded = true
+		}
 		return a, nil
 	case tea.WindowSizeMsg:
 		a.width = m.Width
@@ -198,6 +207,40 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return a, nil
+}
+
+// nearestPane picks the popup's initial selection: the visible agent row
+// nearest to the attached client's focus, in display order — the exact
+// focused pane, else the focused window's first agent, else the focused
+// session's first agent, else the top of the list. Agents in hidden
+// windows are no candidates while the fold is closed (their rows aren't
+// on screen). Empty when nothing is visible.
+func nearestPane(agents []state.Agent, focus tmux.Focus, hiddenPrefix string, foldHidden bool) string {
+	windowPane, sessionPane, topPane := "", "", ""
+	for _, a := range sortAgents(agents) {
+		if foldHidden && hiddenPrefix != "" && strings.HasPrefix(a.WindowName, hiddenPrefix) {
+			continue
+		}
+		if a.PaneID == focus.PaneID {
+			return a.PaneID
+		}
+		if windowPane == "" && a.Session == focus.Session && a.WindowIndex == focus.WindowIndex {
+			windowPane = a.PaneID
+		}
+		if sessionPane == "" && a.Session == focus.Session {
+			sessionPane = a.PaneID
+		}
+		if topPane == "" {
+			topPane = a.PaneID
+		}
+	}
+	if windowPane != "" {
+		return windowPane
+	}
+	if sessionPane != "" {
+		return sessionPane
+	}
+	return topPane
 }
 
 // move shifts the popup selection to the next/previous agent row (wrapping)

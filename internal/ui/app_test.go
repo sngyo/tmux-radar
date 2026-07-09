@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -276,6 +277,140 @@ func TestViewMarksPopupSelection(t *testing.T) {
 	}
 	if !marked {
 		t.Error("selected row must carry the ❯ marker")
+	}
+}
+
+// ag builds an agent with an explicit pane id, for tests where several
+// panes share a window (mk derives the id from the window name).
+func ag(pane, sess string, win int, name string, paneIdx int) state.Agent {
+	return state.Agent{PaneID: pane, Session: sess, WindowIndex: win,
+		WindowName: name, PaneIndex: paneIdx, Kind: "claude", State: detect.Idle, Since: t0}
+}
+
+func TestNearestPaneExactMatchWins(t *testing.T) {
+	agents := []state.Agent{
+		ag("%a", "s", 1, "api", 1),
+		ag("%b", "s", 1, "api", 2),
+	}
+	focus := tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%b"}
+	if got := nearestPane(agents, focus, "_", true); got != "%b" {
+		t.Errorf("nearestPane = %q, want %%b (exact pane match beats window order)", got)
+	}
+}
+
+func TestNearestPaneFallsBackToFirstAgentInWindow(t *testing.T) {
+	// the focused pane itself is not an agent; agents listed out of order to
+	// prove the helper follows rendered order, not slice order
+	agents := []state.Agent{
+		ag("%a", "s", 1, "api", 1),
+		ag("%c", "s", 2, "web", 2),
+		ag("%b", "s", 2, "web", 1),
+	}
+	focus := tmux.Focus{Session: "s", WindowIndex: 2, PaneID: "%shell"}
+	if got := nearestPane(agents, focus, "_", true); got != "%b" {
+		t.Errorf("nearestPane = %q, want %%b (first agent in the focused window)", got)
+	}
+}
+
+func TestNearestPaneFallsBackToFirstAgentInSession(t *testing.T) {
+	agents := []state.Agent{
+		ag("%z", "s", 9, "worker", 1),
+		ag("%a", "s", 3, "api", 1),
+		ag("%m", "mon", 1, "claude", 1),
+	}
+	focus := tmux.Focus{Session: "s", WindowIndex: 5, PaneID: "%shell"}
+	if got := nearestPane(agents, focus, "_", true); got != "%a" {
+		t.Errorf("nearestPane = %q, want %%a (first agent in the focused session)", got)
+	}
+}
+
+func TestNearestPaneFallsBackToTop(t *testing.T) {
+	agents := []state.Agent{
+		ag("%z", "zzz", 1, "api", 1),
+		ag("%m", "mon", 1, "claude", 1),
+	}
+	focus := tmux.Focus{Session: "elsewhere", WindowIndex: 1, PaneID: "%shell"}
+	if got := nearestPane(agents, focus, "_", true); got != "%m" {
+		t.Errorf("nearestPane = %q, want %%m (top of the rendered list)", got)
+	}
+}
+
+func TestNearestPaneSkipsHiddenWhileFolded(t *testing.T) {
+	agents := []state.Agent{
+		ag("%h", "s", 1, "_bg", 1),
+		ag("%a", "s", 2, "api", 1),
+	}
+	focus := tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%h"}
+	if got := nearestPane(agents, focus, "_", true); got != "%a" {
+		t.Errorf("nearestPane = %q, want %%a (hidden window excluded while folded)", got)
+	}
+	if got := nearestPane(agents, focus, "_", false); got != "%h" {
+		t.Errorf("nearestPane = %q, want %%h (hidden window eligible once unfolded)", got)
+	}
+	if got := nearestPane(agents, focus, "", true); got != "%h" {
+		t.Errorf("nearestPane = %q, want %%h (empty prefix hides nothing)", got)
+	}
+}
+
+func TestNearestPaneNoVisibleAgents(t *testing.T) {
+	focus := tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%shell"}
+	if got := nearestPane(nil, focus, "_", true); got != "" {
+		t.Errorf("nearestPane = %q, want empty for no agents", got)
+	}
+	hidden := []state.Agent{ag("%h", "s", 1, "_bg", 1)}
+	if got := nearestPane(hidden, focus, "_", true); got != "" {
+		t.Errorf("nearestPane = %q, want empty when every agent is folded away", got)
+	}
+}
+
+func TestPopupSeedsSelectionFromFocusOnFirstPoll(t *testing.T) {
+	a, jumps := recordingApp()
+	snap := a.snap
+	snap.Focus = tmux.Focus{Session: "s", WindowIndex: 2, PaneID: "%web"}
+	a.Update(snapMsg{snap: snap})
+	if a.selPane != "%web" {
+		t.Fatalf("selPane = %q, want %%web (seeded from focus)", a.selPane)
+	}
+	if len(*jumps) != 0 {
+		t.Fatalf("seeding must not live-preview jump, got %v", *jumps)
+	}
+	// a later poll with a different focus must not move the cursor
+	moved := snap
+	moved.Focus = tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%api"}
+	a.Update(snapMsg{snap: moved})
+	if a.selPane != "%web" {
+		t.Fatalf("selPane = %q, second poll must not re-seed", a.selPane)
+	}
+	// movement continues relative to the seeded row (wraps to the first)
+	a.View()
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	if a.selPane != "%api" {
+		t.Errorf("selPane = %q, want %%api (move starts from the seeded row)", a.selPane)
+	}
+}
+
+func TestPopupSeedWaitsForSuccessfulPoll(t *testing.T) {
+	a, _ := recordingApp()
+	snap := a.snap
+	snap.Focus = tmux.Focus{Session: "s", WindowIndex: 2, PaneID: "%web"}
+	a.Update(snapMsg{snap: snap, err: errors.New("tmux gone")})
+	if a.selPane != "" {
+		t.Fatalf("selPane = %q, a failed poll must not seed", a.selPane)
+	}
+	a.Update(snapMsg{snap: snap})
+	if a.selPane != "%web" {
+		t.Errorf("selPane = %q, want %%web after the first successful poll", a.selPane)
+	}
+}
+
+func TestSidebarNeverSeedsSelection(t *testing.T) {
+	a, _ := recordingApp()
+	a.popup = false
+	snap := a.snap
+	snap.Focus = tmux.Focus{Session: "s", WindowIndex: 2, PaneID: "%web"}
+	a.Update(snapMsg{snap: snap})
+	if a.selPane != "" {
+		t.Errorf("selPane = %q, the persistent sidebar has no selection cursor", a.selPane)
 	}
 }
 

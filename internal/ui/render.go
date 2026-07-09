@@ -63,12 +63,13 @@ var icons = map[state.Display]string{
 // spinnerFrames animate the working glyph so running agents read as alive.
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-// Render produces the full sidebar as rows, ordered
-// session → window index → pane index, hidden windows folded at the bottom.
-func Render(v ViewData) []Row {
-	agents := append([]state.Agent(nil), v.Agents...)
-	sort.SliceStable(agents, func(i, j int) bool {
-		a, b := agents[i], agents[j]
+// sortAgents copies agents into display order: session → window index →
+// pane index. Shared by Render and the popup's initial-selection seeding
+// so the two notions of "first" cannot drift apart.
+func sortAgents(agents []state.Agent) []state.Agent {
+	sorted := append([]state.Agent(nil), agents...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
 		if a.Session != b.Session {
 			return a.Session < b.Session
 		}
@@ -77,6 +78,13 @@ func Render(v ViewData) []Row {
 		}
 		return a.PaneIndex < b.PaneIndex
 	})
+	return sorted
+}
+
+// Render produces the full sidebar as rows, ordered
+// session → window index → pane index, hidden windows folded at the bottom.
+func Render(v ViewData) []Row {
+	agents := sortAgents(v.Agents)
 
 	var visible, hidden []state.Agent
 	for _, a := range agents {
