@@ -129,6 +129,47 @@ func TestNewAppSeedsPrevFromDisk(t *testing.T) {
 	}
 }
 
+// Unfolding many hidden agents can make the view taller than the pane.
+// bubbletea's renderer drops overflow lines from the TOP, which would shift
+// every row up on screen and break the rows-index == screen-line mouse
+// mapping — the fold row the user just clicked could no longer be clicked
+// to fold back. The view must clamp to the pane height instead, cutting
+// overflow from the bottom.
+func TestClickFoldTogglesClosedWhenUnfoldedOverflowsPane(t *testing.T) {
+	agents := []state.Agent{mk("main", 1, "api", 1, "", detect.Idle, t0)}
+	for i := 0; i < 20; i++ {
+		agents = append(agents, mk("main", 10+i, fmt.Sprintf("_w%d", i), 1, "", detect.Idle, t0))
+	}
+	a := &App{hiddenPrefix: "_", fold: true, snap: state.Snapshot{Agents: agents}}
+	a.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	a.View()
+	foldY := -1
+	for i, r := range a.rows {
+		if r.ToggleFold {
+			foldY = i
+		}
+	}
+	if foldY < 0 {
+		t.Fatal("no fold row rendered")
+	}
+	click := tea.MouseMsg{Y: foldY, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft}
+	a.Update(click)
+	if a.fold {
+		t.Fatal("first click must unfold the hidden section")
+	}
+	view := a.View()
+	if got := len(strings.Split(view, "\n")); got > 10 {
+		t.Errorf("unfolded view is %d lines, must fit the 10-line pane so screen lines keep matching row indices", got)
+	}
+	if !a.rows[foldY].ToggleFold {
+		t.Fatalf("row at y=%d is no longer the fold row after unfolding", foldY)
+	}
+	a.Update(click) // the user clicks the same spot again
+	if !a.fold {
+		t.Error("second click on the fold row must fold the hidden section back")
+	}
+}
+
 func TestPopupModeEscQuits(t *testing.T) {
 	esc := tea.KeyMsg{Type: tea.KeyEsc}
 	popup := &App{popup: true}

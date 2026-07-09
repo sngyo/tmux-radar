@@ -71,6 +71,7 @@ type App struct {
 	rows           []Row // last rendered rows; index = screen line for mouse
 	fold           bool
 	width          int // pane width from the last WindowSizeMsg
+	height         int // pane height from the last WindowSizeMsg
 	frame          int // animation frame for the working-glyph spinner
 	err            error
 	inFlight       bool       // a poll cmd is outstanding; skip re-issuing until it returns
@@ -156,6 +157,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case tea.WindowSizeMsg:
 		a.width = m.Width
+		a.height = m.Height
 		return a, nil
 	case tea.KeyMsg:
 		if m.String() == "q" || m.String() == "ctrl+c" {
@@ -272,12 +274,22 @@ func (a *App) View() string {
 	if a.err != nil {
 		return "tmux server not running…\nretrying every second (q to quit)\n"
 	}
-	a.rows = Render(ViewData{
+	rows := Render(ViewData{
 		Agents: a.snap.Agents, FoldHidden: a.fold, HiddenPrefix: a.hiddenPrefix,
 		Now: time.Now(), Width: a.width, Focus: a.snap.Focus, Frame: a.frame, Popup: a.popup,
 	})
+	// The view must never be taller than the pane: bubbletea drops overflow
+	// lines from the TOP, which would shift every row up on screen and break
+	// the rows-index == screen-line mouse mapping (e.g. the fold row stops
+	// being clickable right after unfolding). Cut from the bottom instead,
+	// and skip the trailing newline — the renderer counts it as one more
+	// line, which would start the top-dropping one row early.
+	if a.height > 0 && len(rows) > a.height {
+		rows = rows[:a.height]
+	}
+	a.rows = rows
 	out := ""
-	for _, r := range a.rows {
+	for i, r := range a.rows {
 		st := styles[r.Kind]
 		if r.Kind == RowAgent {
 			st = displayStyles[r.Display]
@@ -298,7 +310,10 @@ func (a *App) View() string {
 		if (r.Kind == RowAlert || r.Current || selected) && a.width > 0 {
 			st = st.Width(a.width)
 		}
-		out += st.Render(text) + "\n"
+		if i > 0 {
+			out += "\n"
+		}
+		out += st.Render(text)
 	}
 	return out
 }
