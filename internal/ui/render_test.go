@@ -96,10 +96,10 @@ func TestRenderStructure(t *testing.T) {
 	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
 	// header, alert (1 blocked), group main, window 12:api (1 agent),
 	// window 14:worker (2 agents), group mon, window 1:claude (1 agent),
-	// fold, footer — with one spacer between window blocks
+	// fold, footer — with one spacer between window blocks and before the fold
 	want := []RowKind{RowHeader, RowAlert, RowGroup, RowWindow, RowAgent,
 		RowSpacer, RowWindow, RowAgent, RowAgent,
-		RowSpacer, RowGroup, RowWindow, RowAgent, RowFold, RowFooter}
+		RowSpacer, RowGroup, RowWindow, RowAgent, RowSpacer, RowFold, RowFooter}
 	got := kinds(rows)
 	if len(got) != len(want) {
 		t.Fatalf("rows = %d, want %d: %+v", len(got), len(want), rows)

@@ -134,7 +134,7 @@ func Render(v ViewData) []Row {
 		if hiddenBlocked > 0 {
 			text += fmt.Sprintf(" ◆%d", hiddenBlocked)
 		}
-		rows = append(rows, Row{Text: text, Kind: RowFold, ToggleFold: true})
+		rows = appendSpaced(rows, Row{Text: text, Kind: RowFold, ToggleFold: true})
 		if !v.FoldHidden {
 			rows = append(rows, agentRows(hidden, v, labelW)...)
 		}
