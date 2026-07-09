@@ -1,0 +1,6 @@
+✻ Waiting for 1 dynamic workflow to finish
+
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage

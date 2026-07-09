@@ -30,6 +30,10 @@ func DefaultWorkingPatterns() []string {
 		`esc to interrupt`,
 		// main turn is over but spawned subagents are still running
 		`Waiting for \d+ background agents? to finish`,
+		// main turn is over but a dynamic (self-paced) workflow is still
+		// running; its wait line names "dynamic workflow", not "background
+		// agents", so the pattern above never matches it.
+		`Waiting for \d+ dynamic workflows? to finish`,
 		// main turn is over but a background monitor is still running; the
 		// footer counts it ("· 1 monitor ·") whenever one is live. A monitor
 		// is not a background agent, so the wait line above never matches it.
