@@ -27,7 +27,15 @@ type Rules struct {
 // so pattern changes land in one place and cannot drift.
 func DefaultWorkingPatterns() []string {
 	return []string{
+		// pre-2.1.2xx builds: the hint appears in the spinner line and the
+		// input-box mode line while a turn runs
 		`esc to interrupt`,
+		// 2.1.2xx dropped that hint everywhere, leaving the spinner line
+		// itself as the only working signal: "✻ Accomplishing… (1m 49s ·
+		// ↓ 5.3k tokens)". Anchored to column 0 (glyph frame + verb +
+		// elapsed) so a spinner line quoted inside indented conversation
+		// output cannot match.
+		`(?m)^[·✢*✳✶✻✽] \w[\w -]*… \(\d+`,
 		// main turn is over but spawned subagents are still running
 		`Waiting for \d+ background agents? to finish`,
 		// main turn is over but a dynamic (self-paced) workflow is still

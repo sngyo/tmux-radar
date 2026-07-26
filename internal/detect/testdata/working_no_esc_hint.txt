@@ -1,0 +1,12 @@
+● I'll capture the pane content and check the footer format.
+
+  Bash(tmux capture-pane -p -t %29 | tail -30)
+  ⎿  (24 lines)
+
+✻ Accomplishing… (1m 49s · ↓ 5.3k tokens)
+
+───────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────
+  shingyouchi.k@gmail.com                                       /rc
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
