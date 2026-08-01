@@ -32,10 +32,12 @@ func DefaultWorkingPatterns() []string {
 		`esc to interrupt`,
 		// 2.1.2xx dropped that hint everywhere, leaving the spinner line
 		// itself as the only working signal: "✻ Accomplishing… (1m 49s ·
-		// ↓ 5.3k tokens)". Anchored to column 0 (glyph frame + verb +
-		// elapsed) so a spinner line quoted inside indented conversation
-		// output cannot match.
-		`(?m)^[·✢*✳✶✻✽] \w[\w -]*… \(\d+`,
+		// ↓ 5.3k tokens)". The parenthetical may lead with a stage note
+		// before the elapsed time — "(running stop hooks… 2/3 · 1m 38s ·
+		// …)" — so only require an elapsed-time token somewhere inside it.
+		// Anchored to column 0 (glyph frame + verb) so a spinner line
+		// quoted inside indented conversation output cannot match.
+		`(?m)^[·✢*✳✶✻✽] \w[\w -]*… \([^)]*\d+[hms]\b`,
 		// main turn is over but spawned subagents are still running
 		`Waiting for \d+ background agents? to finish`,
 		// main turn is over but a dynamic (self-paced) workflow is still

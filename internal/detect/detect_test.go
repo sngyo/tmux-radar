@@ -24,6 +24,7 @@ func TestDetect(t *testing.T) {
 	}{
 		{"working.txt", Working},
 		{"working_no_esc_hint.txt", Working},
+		{"working_stop_hooks.txt", Working},
 		{"working_background_agent.txt", Working},
 		{"working_dynamic_workflow.txt", Working},
 		{"working_monitor.txt", Working},

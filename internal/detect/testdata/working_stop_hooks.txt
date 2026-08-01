@@ -1,0 +1,12 @@
+● Running 1 shell command · 3s…
+  ⎿  $ cd /Users/sngyo/Documents/carnot/jinba-app-neo-saas-2431 && pnpm format-and-lint:fix >/dev/null 2>&1
+     (3s · 9 lines)
+     (ctrl+b ctrl+b (twice) to run in background)
+
+✻ Bloviating… (running stop hooks… 2/3 · 1m 38s · ↓ 4.8k tokens)
+
+───────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────
+  kosuke.s@carnot.ai                                            /rc
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
