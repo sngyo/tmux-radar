@@ -25,6 +25,7 @@ func TestDetect(t *testing.T) {
 		{"working.txt", Working},
 		{"working_no_esc_hint.txt", Working},
 		{"working_stop_hooks.txt", Working},
+		{"working_todo_spinner.txt", Working},
 		{"working_background_agent.txt", Working},
 		{"working_dynamic_workflow.txt", Working},
 		{"working_monitor.txt", Working},
@@ -72,6 +73,31 @@ func TestDetectAskQuestionOnlyWhenFooterIsLast(t *testing.T) {
 		"  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents\n"
 	if got := DefaultRules().Detect(quoted); got != Working {
 		t.Errorf("got %s, want working (quoted card footer above a live input box)", got)
+	}
+}
+
+// The spinner line's text is the in-progress todo item on recent Claude Code
+// builds, so it can carry arbitrary punctuation and non-ASCII text.
+func TestDetectWorkingSpinnerTextVariants(t *testing.T) {
+	r := DefaultRules()
+	lines := []string{
+		"✻ Finishing surfaces, tests, PR… (26m 50s · ↓ 62.1k tokens)",
+		"✶ Model surfaces + tests + gates… (3s · ↓ 1.0k tokens)",
+		"✽ 型チェックの失敗を修正中… (10s · ↓ 2.2k tokens)",
+	}
+	for _, l := range lines {
+		if got := r.Detect(l + "\n"); got != Working {
+			t.Errorf("%q: got %s, want working", l, got)
+		}
+	}
+}
+
+// A spinner line quoted inside indented conversation output must not match:
+// the column-0 anchor is what keeps the loosened text class safe.
+func TestDetectIgnoresIndentedSpinnerQuote(t *testing.T) {
+	screen := "  ✻ Zigzagging… (3m 20s · ↓ 10.0k tokens)\n\n❯\n"
+	if got := DefaultRules().Detect(screen); got != Idle {
+		t.Errorf("got %s, want idle (indented quoted spinner line)", got)
 	}
 }
 

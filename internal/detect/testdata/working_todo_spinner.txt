@@ -1,0 +1,13 @@
+● Update(~/Documents/carnot/jinba-app-neo-saas-2447/src/lib/agent-prompt.test.ts)
+  ⎿  Added 3 lines, removed 1 line
+
+✻ Finishing surfaces, tests, PR… (26m 50s · ↓ 62.1k tokens)
+  ✔ Build organize core + tool definition
+  ✔ Wire both runtimes + registration
+  ▪ Model surfaces + tests + gates + PR
+
+───────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────
+  kosuke.s@carnot.ai
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

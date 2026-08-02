@@ -35,9 +35,12 @@ func DefaultWorkingPatterns() []string {
 		// ↓ 5.3k tokens)". The parenthetical may lead with a stage note
 		// before the elapsed time — "(running stop hooks… 2/3 · 1m 38s ·
 		// …)" — so only require an elapsed-time token somewhere inside it.
-		// Anchored to column 0 (glyph frame + verb) so a spinner line
-		// quoted inside indented conversation output cannot match.
-		`(?m)^[·✢*✳✶✻✽] \w[\w -]*… \([^)]*\d+[hms]\b`,
+		// The text is no longer a single gerund: recent builds show the
+		// in-progress todo item, which can carry commas, "+", non-ASCII
+		// text, etc., so accept anything between the glyph and "… (".
+		// Anchored to column 0 (glyph frame) so a spinner line quoted
+		// inside indented conversation output cannot match.
+		`(?m)^[·✢*✳✶✻✽] \S.*… \([^)]*\d+[hms]\b`,
 		// main turn is over but spawned subagents are still running
 		`Waiting for \d+ background agents? to finish`,
 		// main turn is over but a dynamic (self-paced) workflow is still
