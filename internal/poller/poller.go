@@ -61,9 +61,20 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		if err != nil {
 			continue
 		}
+		st := d.Rules.Detect(screen)
+		subs := detect.Subagents(screen)
+		// A tall pane can scroll the "Waiting for N background agents" line
+		// above the detection tail (the input box is pinned to the pane
+		// bottom), leaving no working pattern in view. The subagent list next
+		// to the input box carries live runtime tails and is the same signal,
+		// so it keeps the pane working. Blocked still wins: a permission
+		// prompt can appear while subagents run.
+		if st == detect.Idle && anySubagentWorking(subs) {
+			st = detect.Working
+		}
 		obs = append(obs, state.Observation{
-			Pane: p, Kind: p.Command, State: d.Rules.Detect(screen),
-			Subagents: detect.Subagents(screen),
+			Pane: p, Kind: p.Command, State: st,
+			Subagents: subs,
 		})
 	}
 	next := state.Apply(prev, obs, now)
@@ -78,6 +89,15 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		}
 	}
 	return next, nil
+}
+
+func anySubagentWorking(subs []detect.Subagent) bool {
+	for _, s := range subs {
+		if s.Working {
+			return true
+		}
+	}
+	return false
 }
 
 func matches(patterns []*regexp.Regexp, command string) bool {

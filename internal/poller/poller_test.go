@@ -94,6 +94,65 @@ func TestRunOnceClearsDoneOnVisitedPane(t *testing.T) {
 	}
 }
 
+func TestRunOncePromotesIdleToWorkingWhileSubagentsRun(t *testing.T) {
+	// In a tall pane the "Waiting for N background agents to finish" line can
+	// sit above the detection tail (the input box is pinned to the pane
+	// bottom), so no working pattern is visible. The subagent list rendered
+	// next to the input box still carries live runtime tails and must keep
+	// the pane working.
+	screen := "  kosuke.s@example.com\n" +
+		"  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent\n" +
+		"\n" +
+		"  ⏺ main\n" +
+		"  ◯ claude   investigate the branch                 5m 24s · ↓ 125.8k tokens\n" +
+		"  ◯ Explore  explore the MCP surface                 5m 9s · ↓ 220.6k tokens\n"
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return screen, nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Agents) != 1 {
+		t.Fatalf("want 1 agent, got %+v", s.Agents)
+	}
+	if s.Agents[0].State != detect.Working {
+		t.Errorf("agent state = %s, want working while subagents run", s.Agents[0].State)
+	}
+}
+
+func TestRunOnceKeepsIdleWhenAllSubagentsDone(t *testing.T) {
+	// Finished subagents (✓ rows) linger in the list; they must not keep the
+	// pane working, or the unseen-done marker would never arm.
+	screen := "  ⏺ main\n" +
+		"  ✓ claude   investigate the branch                 5m 24s · ↓ 125.8k tokens\n"
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return screen, nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Agents) != 1 {
+		t.Fatalf("want 1 agent, got %+v", s.Agents)
+	}
+	if s.Agents[0].State != detect.Idle {
+		t.Errorf("agent state = %s, want idle when all subagents are done", s.Agents[0].State)
+	}
+}
+
 func TestDefaultPatternsMatchVersionedClaudeBinary(t *testing.T) {
 	pats := DefaultDeps().ProcessPatterns
 	for _, cmd := range []string{"claude", "2.1.185"} {
