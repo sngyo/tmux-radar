@@ -414,6 +414,50 @@ func TestSidebarNeverSeedsSelection(t *testing.T) {
 	}
 }
 
+func TestFocusTickFetchesFocusViaDeps(t *testing.T) {
+	want := tmux.Focus{Session: "s", WindowIndex: 3, PaneID: "%web"}
+	a := &App{deps: poller.Deps{
+		CurrentFocus: func() (tmux.Focus, error) { return want, nil },
+	}}
+	_, cmd := a.Update(focusTickMsg(time.Time{}))
+	if cmd == nil {
+		t.Fatal("focus tick must issue a fetch command")
+	}
+	m, ok := cmd().(focusMsg)
+	if !ok {
+		t.Fatalf("fetch should yield a focusMsg, got %T", m)
+	}
+	if m.err != nil || m.focus != want {
+		t.Errorf("focusMsg = %+v, want focus %+v", m, want)
+	}
+}
+
+func TestFocusMsgUpdatesFocusAndRearms(t *testing.T) {
+	a := &App{snap: state.Snapshot{
+		Focus: tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%api"},
+	}}
+	next := tmux.Focus{Session: "s", WindowIndex: 2, PaneID: "%web"}
+	_, cmd := a.Update(focusMsg{focus: next})
+	if a.snap.Focus != next {
+		t.Errorf("snap.Focus = %+v, want %+v (fast path must move the highlight)", a.snap.Focus, next)
+	}
+	if cmd == nil {
+		t.Error("focus update must re-arm the focus ticker")
+	}
+}
+
+func TestFocusMsgErrorKeepsFocusAndRearms(t *testing.T) {
+	orig := tmux.Focus{Session: "s", WindowIndex: 1, PaneID: "%api"}
+	a := &App{snap: state.Snapshot{Focus: orig}}
+	_, cmd := a.Update(focusMsg{err: errors.New("tmux gone")})
+	if a.snap.Focus != orig {
+		t.Errorf("snap.Focus = %+v, a failed fetch must not clobber focus", a.snap.Focus)
+	}
+	if cmd == nil {
+		t.Error("a failed fetch must still re-arm the focus ticker")
+	}
+}
+
 func TestPopupAttentionJumpOnA(t *testing.T) {
 	var jumps []string
 	a := &App{popup: true, width: 40, snap: state.Snapshot{

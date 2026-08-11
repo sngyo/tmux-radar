@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"time"
@@ -56,10 +57,23 @@ type snapMsg struct {
 	snap state.Snapshot
 	err  error
 }
+type focusTickMsg time.Time
+type focusMsg struct {
+	focus tmux.Focus
+	err   error
+}
 
 // animInterval paces the working-glyph spinner. Fast enough to read as
 // motion, slow enough that a full redraw of a ~40-col pane costs nothing.
 const animInterval = 200 * time.Millisecond
+
+// focusInterval paces the focus-only refresh that keeps the focused-window
+// highlight tracking the client between full polls. A full poll captures
+// every agent pane and lands at most once per interval (default 1s), which
+// made the highlight lag by up to two polls; focus itself is a single cheap
+// tmux exec, so it can run an order of magnitude faster. The next fetch is
+// armed only after the previous one returns, so fetches never overlap.
+const focusInterval = 150 * time.Millisecond
 
 // App is the bubbletea model of the sidebar.
 type App struct {
@@ -112,7 +126,8 @@ func (a *App) jumpTo(session string, windowIndex int, paneID string) error {
 
 func (a *App) Init() tea.Cmd {
 	a.inFlight = true
-	return tea.Batch(a.poll(), a.tick(), a.animTick())
+	// fetchFocus (not focusTick) so the first highlight lands immediately
+	return tea.Batch(a.poll(), a.tick(), a.animTick(), a.fetchFocus())
 }
 
 func (a *App) tick() tea.Cmd {
@@ -121,6 +136,23 @@ func (a *App) tick() tea.Cmd {
 
 func (a *App) animTick() tea.Cmd {
 	return tea.Tick(animInterval, func(time.Time) tea.Msg { return animMsg{} })
+}
+
+func (a *App) focusTick(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg { return focusTickMsg(t) })
+}
+
+// fetchFocus resolves the attached client's focus off the update loop.
+// CurrentFocus is captured here so the closure never races the model.
+func (a *App) fetchFocus() tea.Cmd {
+	fetch := a.deps.CurrentFocus
+	return func() tea.Msg {
+		if fetch == nil {
+			return focusMsg{err: errors.New("no focus source configured")}
+		}
+		f, err := fetch()
+		return focusMsg{focus: f, err: err}
+	}
 }
 
 func (a *App) poll() tea.Cmd {
@@ -147,6 +179,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case animMsg:
 		a.frame++
 		return a, a.animTick()
+	case focusTickMsg:
+		return a, a.fetchFocus()
+	case focusMsg:
+		if m.err != nil {
+			// tmux gone: back off to the slow poll cadence instead of
+			// hammering a dead server several times a second.
+			return a, a.focusTick(a.interval)
+		}
+		a.snap.Focus = m.focus
+		return a, a.focusTick(focusInterval)
 	case snapMsg:
 		a.inFlight = false
 		a.err = m.err
