@@ -153,6 +153,51 @@ func TestRunOnceKeepsIdleWhenAllSubagentsDone(t *testing.T) {
 	}
 }
 
+func TestHookWorkingUpgradesIdle(t *testing.T) {
+	// Hook events say working; the screen shows an idle prompt (e.g. the
+	// wait line scrolled away AND the subagent list failed to parse). Hook
+	// wins.
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return "❯ \n", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		HookWorking:     func(paneID string) bool { return true },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil || len(s.Agents) != 1 {
+		t.Fatalf("snapshot: %+v, %v", s, err)
+	}
+	if s.Agents[0].State != detect.Working {
+		t.Errorf("state = %s, want working via hook events", s.Agents[0].State)
+	}
+}
+
+func TestHookWorkingDoesNotMaskBlocked(t *testing.T) {
+	// Blocked must still win: a permission prompt appears mid-turn while
+	// hook events legitimately say the turn is running.
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return "Do you want to proceed?\n❯ 1. Yes\n", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		HookWorking:     func(paneID string) bool { return true },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil || len(s.Agents) != 1 {
+		t.Fatalf("snapshot: %+v, %v", s, err)
+	}
+	if s.Agents[0].State != detect.Blocked {
+		t.Errorf("state = %s, want blocked", s.Agents[0].State)
+	}
+}
+
 func TestDefaultPatternsMatchVersionedClaudeBinary(t *testing.T) {
 	pats := DefaultDeps().ProcessPatterns
 	for _, cmd := range []string{"claude", "2.1.185"} {

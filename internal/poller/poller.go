@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/hookevents"
 	"github.com/sngyo/tmux-radar/internal/state"
 	"github.com/sngyo/tmux-radar/internal/tmux"
 )
@@ -19,6 +20,10 @@ type Deps struct {
 	// active pane of the attached client; clears unseen-done marks and
 	// drives the sidebar's focused-window highlight
 	CurrentFocus func() (tmux.Focus, error)
+	// HookWorking reports hook-event working state for a pane (nil: disabled).
+	// It is the primary working signal for instrumented sessions; scraping
+	// remains for blocked detection and uninstrumented sessions.
+	HookWorking func(paneID string) bool
 }
 
 // DefaultProcessPatterns matches Claude Code binaries: the plain name plus
@@ -40,6 +45,13 @@ func DefaultDeps() Deps {
 		Rules:           detect.DefaultRules(),
 		ProcessPatterns: pats,
 		CurrentFocus:    tmux.CurrentFocus,
+		HookWorking: func(paneID string) bool {
+			evs, err := hookevents.ReadPane(hookevents.DefaultDir(), paneID)
+			if err != nil {
+				return false
+			}
+			return hookevents.Working(evs, time.Now())
+		},
 	}
 }
 
@@ -70,6 +82,15 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		// so it keeps the pane working. Blocked still wins: a permission
 		// prompt can appear while subagents run.
 		if st == detect.Idle && anySubagentWorking(subs) {
+			st = detect.Working
+		}
+		// Hook events are the primary working signal for instrumented
+		// sessions: they see UserPromptSubmit/Stop and background-agent
+		// start/stop directly, so they catch a running turn or a live
+		// subagent even when the screen text scrolled out of view or a
+		// layout change broke the scrape. Blocked still wins above: a
+		// permission prompt can appear while hook events say the turn runs.
+		if st == detect.Idle && d.HookWorking != nil && d.HookWorking(p.ID) {
 			st = detect.Working
 		}
 		obs = append(obs, state.Observation{

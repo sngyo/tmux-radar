@@ -125,6 +125,7 @@ func cmdSummary(stdout io.Writer) int {
 
 // cmdWatch runs the poller headlessly (P1 usage and debugging).
 func cmdWatch(stdout io.Writer) int {
+	hookevents.GC(hookevents.DefaultDir(), time.Now(), 48*time.Hour)
 	cfg, cfgErr := config.Load(config.DefaultConfigPath())
 	deps, err := cfg.PollerDeps()
 	if err != nil {
@@ -211,6 +212,7 @@ func escapeFormat(s string) string {
 
 // cmdSidebar runs the bubbletea sidebar app in the current terminal.
 func cmdSidebar(stdout io.Writer, popup bool) int {
+	hookevents.GC(hookevents.DefaultDir(), time.Now(), 48*time.Hour)
 	cfg, cfgErr := config.Load(config.DefaultConfigPath())
 	deps, err := cfg.PollerDeps()
 	if err != nil {

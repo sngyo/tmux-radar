@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/sngyo/tmux-radar/internal/detect"
+	"github.com/sngyo/tmux-radar/internal/hookevents"
 	"github.com/sngyo/tmux-radar/internal/poller"
 	"github.com/sngyo/tmux-radar/internal/tmux"
 )
@@ -156,5 +158,12 @@ func (c Config) PollerDeps() (poller.Deps, error) {
 		Rules:           rules,
 		ProcessPatterns: pats,
 		CurrentFocus:    tmux.CurrentFocus,
+		HookWorking: func(paneID string) bool {
+			evs, err := hookevents.ReadPane(hookevents.DefaultDir(), paneID)
+			if err != nil {
+				return false
+			}
+			return hookevents.Working(evs, time.Now())
+		},
 	}, nil
 }

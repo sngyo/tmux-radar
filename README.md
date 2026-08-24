@@ -101,6 +101,38 @@ function focusTmuxSplit()
 end
 ```
 
+## Claude Code hooks (recommended)
+
+Screen-scraping alone can miss a pane's working state when the layout
+changes (a scrolled-away wait line, an unrecognized subagent list). Claude
+Code hooks close that gap: `tmux-radar` can register itself as a hook
+handler that logs `UserPromptSubmit`, `Stop`/`StopFailure`, and
+`SubagentStart`/`SubagentStop` events per pane, and the poller uses that log
+as its primary working signal — scraping remains a fallback for blocked
+detection and for sessions without hooks installed.
+
+```bash
+tmux-radar install-hooks
+```
+
+This merges radar's entries into `~/.claude/settings.json` (a timestamped
+backup of the previous file is kept alongside it) without touching any
+hooks you already have configured. Already-running Claude Code sessions
+keep using the old settings; **restart each session** for it to start
+firing hook events. Sessions that never restart, or that never install
+hooks at all, just fall back to scraping — behavior is unchanged for them.
+
+```bash
+tmux-radar uninstall-hooks
+```
+
+Removes only radar's entries, leaving any other hooks in the file intact.
+
+Each pane's event log lives at `~/.local/state/tmux-radar/events/<pane
+id>.jsonl`, one JSON object per line — useful for debugging when a pane's
+state looks wrong. `sidebar` and `watch` garbage-collect files untouched
+for 48h on startup, so closed panes' logs don't accumulate indefinitely.
+
 ## Subcommands
 
 | Command | Description |
@@ -110,6 +142,8 @@ end
 | `summary` | Prints a ready-to-render tmux status-line string (e.g. `◆1 ●3 ○2`) by reading the cached state; intended for `status-right`. Prints nothing if the state is stale or missing. |
 | `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. When nothing needs attention it falls back to touring the working agents (oldest first); only when nothing is working either does it show a status message and stay put. |
 | `watch` | Runs the poller headlessly in the foreground, writing state to disk on every tick — useful for status-line/jump support without running the sidebar TUI. |
+| `install-hooks` | Registers radar's Claude Code hook handlers in `~/.claude/settings.json`; see [Claude Code hooks](#claude-code-hooks-recommended) above. |
+| `uninstall-hooks` | Removes radar's hook entries from `~/.claude/settings.json`, leaving any other hooks untouched. |
 | `version` | Prints the `tmux-radar` version string. |
 
 ## Configuration
