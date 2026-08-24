@@ -151,6 +151,23 @@ func TestSubagentsMarksWorkingEntries(t *testing.T) {
 	}
 }
 
+// A workflow task collapses its extra agents into a "(+N)" suffix after the
+// type name ("◯ code-review (+3)  Launching finder angles A and B"). The
+// suffix is separated from the type by a single space, so it must not break
+// the two-space type/title boundary.
+func TestSubagentsParsesCollapsedWorkflowSuffix(t *testing.T) {
+	screen := "  ⏺ main\n" +
+		"  ○ code-review (+3)  Launching finder angles A and B   6m 30s · ↓ 132.2k tokens\n"
+	subs := Subagents(screen)
+	if len(subs) != 1 {
+		t.Fatalf("subagents = %d, want 1: %+v", len(subs), subs)
+	}
+	want := Subagent{Type: "code-review (+3)", Title: "Launching finder angles A and B", Working: true}
+	if subs[0] != want {
+		t.Errorf("got %+v, want %+v", subs[0], want)
+	}
+}
+
 func TestSubagentsMarksDoneEntries(t *testing.T) {
 	screen := "  ● main\n  ✓ Explore  Map the config loaders\n  ○ general-purpose  Fix the flaky test\n"
 	subs := Subagents(screen)

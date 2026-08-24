@@ -152,8 +152,10 @@ var (
 	// possibly behind a selection caret like ")" or "❯"
 	subagentAnchorRe = regexp.MustCompile(`^[\s)❯>]*[⏺●○◯]\s+main\s*$`)
 	// entry rows: "◯ general-purpose  Refactor the billing report generator"
-	// (glyph is U+25EF; ✓ marks a finished task)
-	subagentEntryRe = regexp.MustCompile(`^\s*([○◯●⏺✓])\s+(\S+)\s{2,}(.+?)\s*$`)
+	// (glyph is U+25EF; ✓ marks a finished task). A workflow task collapses
+	// its extra agents into a "(+N)" suffix one space after the type name
+	// ("code-review (+3)"), inside the type field, not the title.
+	subagentEntryRe = regexp.MustCompile(`^\s*([○◯●⏺✓])\s+(\S+(?: \(\+\d+\))?)\s{2,}(.+?)\s*$`)
 	// right-aligned runtime status ("1m 20s · ↓ 76.2k tokens") is separated
 	// from the title by a wide space run
 	subagentStatusRe = regexp.MustCompile(`\s{3,}`)
