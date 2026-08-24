@@ -11,13 +11,14 @@ import (
 	"time"
 )
 
-// Events is the hook set radar registers. It starts as the probe superset;
-// the live probe (see the design spec) trims it to what actually fires.
+// Events is the hook set radar registers. Trimmed to what the live probe
+// showed actually fires and carries signal: TaskCreated/TaskCompleted
+// never fired for either the Agent tool or a background shell (see
+// docs/superpowers/specs/2026-08-25-hook-events-probe-notes.md).
 var Events = []string{
 	"SessionStart", "SessionEnd",
 	"UserPromptSubmit", "Stop", "StopFailure",
 	"SubagentStart", "SubagentStop",
-	"TaskCreated", "TaskCompleted",
 }
 
 // marker identifies radar-owned entries regardless of the binary's path.
