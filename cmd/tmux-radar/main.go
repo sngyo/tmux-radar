@@ -14,6 +14,7 @@ import (
 	"github.com/sngyo/tmux-radar/internal/attention"
 	"github.com/sngyo/tmux-radar/internal/config"
 	"github.com/sngyo/tmux-radar/internal/hookevents"
+	"github.com/sngyo/tmux-radar/internal/hooksetup"
 	"github.com/sngyo/tmux-radar/internal/poller"
 	"github.com/sngyo/tmux-radar/internal/state"
 	tmuxpkg "github.com/sngyo/tmux-radar/internal/tmux"
@@ -52,8 +53,29 @@ func run(args []string, stdout io.Writer) int {
 			return 0 // misconfigured hook entry must not disturb Claude Code
 		}
 		return cmdHook(hookevents.DefaultDir(), os.Getenv("TMUX_PANE"), args[1], os.Stdin)
+	case "install-hooks":
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(stdout, "install-hooks error: %v\n", err)
+			return 1
+		}
+		path := hooksetup.DefaultSettingsPath()
+		if err := hooksetup.Install(path, exe); err != nil {
+			fmt.Fprintf(stdout, "install-hooks error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "hooks installed in %s (restart Claude Code sessions to pick them up)\n", path)
+		return 0
+	case "uninstall-hooks":
+		path := hooksetup.DefaultSettingsPath()
+		if err := hooksetup.Uninstall(path); err != nil {
+			fmt.Fprintf(stdout, "uninstall-hooks error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "hooks removed from %s\n", path)
+		return 0
 	default:
-		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|popup|summary|jump|watch|version]\n")
+		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|popup|summary|jump|watch|install-hooks|uninstall-hooks|version]\n")
 		return 2
 	}
 }
