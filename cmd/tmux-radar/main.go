@@ -13,6 +13,7 @@ import (
 
 	"github.com/sngyo/tmux-radar/internal/attention"
 	"github.com/sngyo/tmux-radar/internal/config"
+	"github.com/sngyo/tmux-radar/internal/hookevents"
 	"github.com/sngyo/tmux-radar/internal/poller"
 	"github.com/sngyo/tmux-radar/internal/state"
 	tmuxpkg "github.com/sngyo/tmux-radar/internal/tmux"
@@ -46,6 +47,11 @@ func run(args []string, stdout io.Writer) int {
 		return cmdSidebar(stdout, popup)
 	case "popup":
 		return cmdPopup(stdout)
+	case "hook":
+		if len(args) < 2 {
+			return 0 // misconfigured hook entry must not disturb Claude Code
+		}
+		return cmdHook(hookevents.DefaultDir(), os.Getenv("TMUX_PANE"), args[1], os.Stdin)
 	default:
 		fmt.Fprintf(stdout, "usage: tmux-radar [sidebar|popup|summary|jump|watch|version]\n")
 		return 2
@@ -198,6 +204,21 @@ func cmdSidebar(stdout io.Writer, popup bool) int {
 		fmt.Fprintf(stdout, "sidebar error: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+// cmdHook appends one hook event to the pane's event log. It never writes
+// to stdout (hook stdout can be injected into Claude's context = token
+// cost) and always exits 0 (radar must never block Claude Code).
+func cmdHook(dir, pane, event string, stdin io.Reader) int {
+	if pane == "" {
+		return 0 // not inside tmux
+	}
+	payload, err := io.ReadAll(io.LimitReader(stdin, 64<<10))
+	if err != nil {
+		payload = nil
+	}
+	_ = hookevents.Append(dir, pane, event, payload, time.Now())
 	return 0
 }
 
