@@ -24,6 +24,13 @@ type Deps struct {
 	// It is the primary working signal for instrumented sessions; scraping
 	// remains for blocked detection and uninstrumented sessions.
 	HookWorking func(paneID string) bool
+	// GCHookEvents sweeps event-log files for panes that no longer exist
+	// (nil: disabled). Called once per tick with every pane tmux currently
+	// lists, not just claude-matching ones: a pane that switched away from
+	// claude to a plain shell still exists and must not lose its log, but a
+	// pane tmux no longer lists is gone and its log is dead weight that can
+	// pin a reused pane id "working".
+	GCHookEvents func(alive map[string]bool)
 }
 
 // DefaultProcessPatterns matches Claude Code binaries: the plain name plus
@@ -52,6 +59,9 @@ func DefaultDeps() Deps {
 			}
 			return hookevents.Working(evs, time.Now())
 		},
+		GCHookEvents: func(alive map[string]bool) {
+			hookevents.GCDead(hookevents.DefaultDir(), alive)
+		},
 	}
 }
 
@@ -63,6 +73,13 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 	panes, err := d.ListPanes()
 	if err != nil {
 		return prev, err
+	}
+	if d.GCHookEvents != nil {
+		alive := make(map[string]bool, len(panes))
+		for _, p := range panes {
+			alive[p.ID] = true
+		}
+		d.GCHookEvents(alive)
 	}
 	var obs []state.Observation
 	for _, p := range panes {

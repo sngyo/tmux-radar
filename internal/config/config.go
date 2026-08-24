@@ -165,5 +165,8 @@ func (c Config) PollerDeps() (poller.Deps, error) {
 			}
 			return hookevents.Working(evs, time.Now())
 		},
+		GCHookEvents: func(alive map[string]bool) {
+			hookevents.GCDead(hookevents.DefaultDir(), alive)
+		},
 	}, nil
 }

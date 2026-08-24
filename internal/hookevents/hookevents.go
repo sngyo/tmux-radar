@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,11 +23,15 @@ type Event struct {
 // dropped: derivation only needs the event name; payloads are for debugging.
 const maxPayload = 32 << 10
 
-// DefaultDir returns ~/.local/state/tmux-radar/events.
+// DefaultDir returns ~/.local/state/tmux-radar/events. An empty string
+// (HOME unresolvable) is returned rather than a relative fallback: a
+// relative "events" dir would scatter event files into whatever cwd the
+// hook subcommand happens to run in (a different one per Claude Code
+// session). Callers must treat "" as "give up", not as a valid directory.
 func DefaultDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "events"
+		return ""
 	}
 	return filepath.Join(home, ".local", "state", "tmux-radar", "events")
 }
@@ -102,6 +107,33 @@ func GC(dir string, now time.Time, maxAge time.Duration) {
 		}
 		if now.Sub(info.ModTime()) > maxAge {
 			os.Remove(filepath.Join(dir, ent.Name()))
+		}
+	}
+}
+
+// GCDead removes event files whose pane is not in alive. It complements
+// the mtime-based GC above: a pane can close (and tmux can reuse its id)
+// well within 48h, and a stale log left pinned "working" for a reused pane
+// id is the worst failure mode — most acutely right after uninstall-hooks,
+// where a turn=true tail with a fresh mtime has no future SessionStart to
+// truncate it. Only files named "<pane>.jsonl" are considered; subdirs and
+// foreign files are left untouched. Best-effort, like GC.
+func GCDead(dir string, alive map[string]bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		pane, ok := strings.CutSuffix(name, ".jsonl")
+		if !ok {
+			continue
+		}
+		if !alive[pane] {
+			os.Remove(filepath.Join(dir, name))
 		}
 	}
 }

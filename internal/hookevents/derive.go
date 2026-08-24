@@ -12,6 +12,16 @@ import (
 // has no such cap: the probe showed Stop firing reliably.
 const maxAgentAge = 2 * time.Hour
 
+// maxTurnAge is a defensive, last-resort cap on how long a running turn
+// (UserPromptSubmit with no Stop/StopFailure yet) can keep a pane
+// "working". The probe showed Stop firing reliably, so this is not a
+// normal expiry path — it exists because a missed Stop (crashed process,
+// dropped hook, or a stale tail left behind by uninstall-hooks with no
+// future SessionStart to truncate it) must not pin a pane working for the
+// rest of the session. Set far above any plausible legitimate turn length
+// (long agentic loops can run for hours) so it only fires on drift.
+const maxTurnAge = 12 * time.Hour
+
 // subagentID extracts the identifier the probe found in Subagent* payloads.
 // Field name pinned by docs/superpowers/specs/2026-08-25-hook-events-probe-notes.md.
 func subagentID(e Event) string {
@@ -34,6 +44,7 @@ func subagentID(e Event) string {
 // wrongly clear an unrelated live agent — such stops are ignored instead.
 func Working(events []Event, now time.Time) bool {
 	turn := false
+	var turnStart time.Time
 	live := map[string]time.Time{}
 	var anon []time.Time
 
@@ -41,6 +52,7 @@ func Working(events []Event, now time.Time) bool {
 		switch e.Event {
 		case "UserPromptSubmit":
 			turn = true
+			turnStart = e.TS
 		case "Stop", "StopFailure":
 			turn = false
 		case "SubagentStart":
@@ -62,10 +74,11 @@ func Working(events []Event, now time.Time) bool {
 			}
 		case "SessionEnd":
 			turn, live, anon = false, map[string]time.Time{}, nil
+			turnStart = time.Time{}
 		}
 	}
 
-	if turn {
+	if turn && now.Sub(turnStart) <= maxTurnAge {
 		return true
 	}
 	cutoff := now.Add(-maxAgentAge)

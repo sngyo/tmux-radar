@@ -99,3 +99,48 @@ func TestGCRemovesOldFiles(t *testing.T) {
 		t.Error("fresh file must survive")
 	}
 }
+
+// GCDead complements the mtime-based GC: a pane can close (and its id be
+// reused) faster than 48h, so a stale log for a dead pane must be swept as
+// soon as the poller notices the pane is gone, not 48h later.
+func TestGCDeadRemovesFilesForPanesNotInAliveSet(t *testing.T) {
+	dir := t.TempDir()
+	if err := Append(dir, "%dead", "Stop", nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := Append(dir, "%live", "Stop", nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	// A non-jsonl file in the same directory must be left alone.
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	GCDead(dir, map[string]bool{"%live": true})
+
+	if _, err := os.Stat(filepath.Join(dir, "%dead.jsonl")); !os.IsNotExist(err) {
+		t.Error("dead pane's file must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "%live.jsonl")); err != nil {
+		t.Error("live pane's file must survive")
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "notes.txt")); err != nil || string(b) != "keep me" {
+		t.Error("non-jsonl file must be untouched")
+	}
+}
+
+func TestDefaultDirEmptyWhenHomeUnset(t *testing.T) {
+	t.Setenv("HOME", "")
+	if got := DefaultDir(); got != "" {
+		t.Errorf("DefaultDir() = %q, want empty string when HOME is unset (a relative fallback would scatter events/ into cwd)", got)
+	}
+}
+
+// Append must fail rather than silently writing into a relative "" dir,
+// which would scatter event files into whatever cwd the hook subcommand
+// happens to run in.
+func TestAppendWithEmptyDirErrors(t *testing.T) {
+	if err := Append("", "%1", "Stop", nil, t0); err == nil {
+		t.Fatal("Append with empty dir must error")
+	}
+}

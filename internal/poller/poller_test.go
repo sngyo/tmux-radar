@@ -2,6 +2,7 @@ package poller
 
 import (
 	"errors"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
@@ -195,6 +196,51 @@ func TestHookWorkingDoesNotMaskBlocked(t *testing.T) {
 	}
 	if s.Agents[0].State != detect.Blocked {
 		t.Errorf("state = %s, want blocked", s.Agents[0].State)
+	}
+}
+
+// GCHookEvents must see every listed pane (not just claude-matching ones):
+// a pane that switched away from claude to a plain shell still exists, but
+// a pane tmux no longer lists is gone and its log is dead weight that must
+// be swept regardless of what command last ran there.
+func TestRunOnceCallsGCHookEventsWithAllListedPaneIDs(t *testing.T) {
+	var gotAlive map[string]bool
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{
+				{ID: "%1", Command: "claude"},
+				{ID: "%2", Command: "zsh"},
+			}, nil
+		},
+		Capture:         func(string) (string, error) { return "idle prompt", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		GCHookEvents:    func(alive map[string]bool) { gotAlive = alive },
+	}
+	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"%1": true, "%2": true}
+	if !reflect.DeepEqual(gotAlive, want) {
+		t.Errorf("alive set = %v, want %v (every listed pane, not just claude ones)", gotAlive, want)
+	}
+}
+
+// A nil GCHookEvents (the zero value used throughout the other tests here)
+// must not panic RunOnce; it simply disables the sweep.
+func TestRunOnceToleratesNilGCHookEvents(t *testing.T) {
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Command: "claude"}}, nil
+		},
+		Capture:         func(string) (string, error) { return "idle prompt", nil },
+		Rules:           detect.DefaultRules(),
+		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
+		t.Fatal(err)
 	}
 }
 

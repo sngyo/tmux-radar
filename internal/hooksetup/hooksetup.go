@@ -24,11 +24,15 @@ var Events = []string{
 // marker identifies radar-owned entries regardless of the binary's path.
 const marker = "tmux-radar hook "
 
-// DefaultSettingsPath returns ~/.claude/settings.json.
+// DefaultSettingsPath returns ~/.claude/settings.json. An empty string
+// (HOME unresolvable) is returned rather than a relative fallback: this is
+// only ever used by the interactive install-hooks/uninstall-hooks
+// subcommands, so surfacing an error there (instead of writing a stray
+// settings.json into cwd) is the correct, visible failure.
 func DefaultSettingsPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "settings.json"
+		return ""
 	}
 	return filepath.Join(home, ".claude", "settings.json")
 }
@@ -42,11 +46,8 @@ func Install(settingsPath, binPath string) error {
 	if err != nil {
 		return err
 	}
-	if b, err := os.ReadFile(settingsPath); err == nil {
-		backup := fmt.Sprintf("%s.bak-%s", settingsPath, time.Now().Format("20060102-150405.000000000"))
-		if err := os.WriteFile(backup, b, 0o644); err != nil {
-			return err
-		}
+	if err := backup(settingsPath); err != nil {
+		return err
 	}
 	hooks, _ := m["hooks"].(map[string]any)
 	if hooks == nil {
@@ -81,9 +82,14 @@ func Install(settingsPath, binPath string) error {
 }
 
 // Uninstall removes radar's entries; foreign hooks and other keys survive.
+// Takes the same pre-write backup Install does: this edits the user's
+// global settings.json too, and should be just as recoverable.
 func Uninstall(settingsPath string) error {
 	m, err := load(settingsPath)
 	if err != nil {
+		return err
+	}
+	if err := backup(settingsPath); err != nil {
 		return err
 	}
 	hooks, _ := m["hooks"].(map[string]any)
@@ -122,6 +128,19 @@ func withoutRadar(matchers []any) []any {
 	return kept
 }
 
+// backup writes a timestamped copy of settingsPath's current content next
+// to it, if the file exists and is readable. A missing or unreadable file
+// has nothing to preserve, so that case is silently skipped rather than
+// treated as an error (mirrors load's not-exist handling).
+func backup(settingsPath string) error {
+	b, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return nil
+	}
+	dst := fmt.Sprintf("%s.bak-%s", settingsPath, time.Now().Format("20060102-150405.000000000"))
+	return os.WriteFile(dst, b, 0o644)
+}
+
 func load(path string) (map[string]any, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -137,10 +156,35 @@ func load(path string) (map[string]any, error) {
 	return m, nil
 }
 
+// save writes m to path via a temp-file-then-rename so a crash mid-write
+// cannot leave the user's global settings.json truncated or corrupted:
+// os.WriteFile truncates in place first, so a process killed mid-write
+// (or a full disk) would otherwise lose the file's content outright.
 func save(path string, m map[string]any) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	b = append(b, '\n')
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmux-radar-settings-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	// A successful rename below makes this a no-op; any earlier return
+	// leaves the temp file cleaned up instead of stranded.
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }

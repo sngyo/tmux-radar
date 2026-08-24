@@ -125,6 +125,66 @@ func TestUninstallRemovesOnlyRadarEntries(t *testing.T) {
 	}
 }
 
+// Uninstall touches the user's global settings.json just like Install; it
+// must take the same pre-write backup so an uninstall gone wrong (or a
+// later regret) is recoverable.
+func TestUninstallWritesBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	pre := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/bin/tmux-radar hook Stop","timeout":5}]}]},"model":"opus"}`
+	os.WriteFile(path, []byte(pre), 0o644)
+	if err := Uninstall(path); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	var backups int
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "settings.json.bak-") {
+			backups++
+			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+			if string(b) != pre {
+				t.Error("backup must hold the pre-uninstall content")
+			}
+		}
+	}
+	if backups != 1 {
+		t.Fatalf("want 1 backup, got %d", backups)
+	}
+}
+
+// save writes via a temp file + rename so a crash mid-write cannot leave
+// the user's global settings.json truncated or corrupted. A successful
+// write must leave no temp file behind.
+func TestSaveIsAtomicAndLeavesNoTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	os.WriteFile(path, []byte(`{"a":1}`), 0o644)
+	if err := Install(path, "/bin/tmux-radar"); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() != "settings.json" && !strings.HasPrefix(e.Name(), "settings.json.bak-") {
+			t.Errorf("stray temp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestDefaultSettingsPathEmptyWhenHomeUnset(t *testing.T) {
+	t.Setenv("HOME", "")
+	if got := DefaultSettingsPath(); got != "" {
+		t.Errorf("DefaultSettingsPath() = %q, want empty string when HOME is unset", got)
+	}
+}
+
+// An empty settings path must not scatter a settings.json into whatever
+// cwd the CLI happens to run in; Install must fail instead.
+func TestInstallWithEmptyPathErrors(t *testing.T) {
+	if err := Install("", "/bin/tmux-radar"); err == nil {
+		t.Fatal("Install with empty settings path must error")
+	}
+}
+
 func TestInstallHandlesMixedMatcherGroups(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	// Start with a mixed group: foreign + stale radar

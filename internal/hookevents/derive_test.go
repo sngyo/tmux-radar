@@ -124,6 +124,24 @@ func TestWorkingAgeCapExpiresStaleLiveEntry(t *testing.T) {
 	}
 }
 
+// A missed Stop (crashed process, dropped hook, or a stale tail left behind
+// by uninstall-hooks) must not pin a pane working forever: a turn whose
+// UserPromptSubmit is older than maxTurnAge relative to now is treated as
+// stale, even with no Stop in the log.
+func TestWorkingTurnAgeCapExpiresStaleTurn(t *testing.T) {
+	now := t0.Add(13 * time.Hour)
+
+	stale := []Event{{Event: "UserPromptSubmit", Pane: "%20", TS: t0}}
+	if Working(stale, now) {
+		t.Fatal("a turn started 13h before now (> maxTurnAge) must be treated as stale")
+	}
+
+	fresh := []Event{{Event: "UserPromptSubmit", Pane: "%20", TS: now.Add(-time.Hour)}}
+	if !Working(fresh, now) {
+		t.Fatal("a turn started 1h before now (< maxTurnAge) must still be working")
+	}
+}
+
 // Replays the Task 4 probe fixture and asserts the exact intermediate
 // states the probe notes describe: the main-turn Stop that fires while a
 // subagent is still running, the unknown-id SubagentStop that must NOT
