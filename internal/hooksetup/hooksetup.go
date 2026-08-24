@@ -35,7 +35,8 @@ func DefaultSettingsPath() string {
 
 // Install merges one radar entry per event into settingsPath, replacing any
 // stale radar entries (old binary paths) and preserving foreign hooks and
-// unknown keys. The pre-install file is backed up next to it.
+// unknown keys. The pre-install file is backed up next to it. Stale radar
+// entries from dropped events are swept away entirely.
 func Install(settingsPath, binPath string) error {
 	m, err := load(settingsPath)
 	if err != nil {
@@ -51,9 +52,21 @@ func Install(settingsPath, binPath string) error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
+	// First sweep: remove all radar entries from all event keys (including dropped events).
+	for ev, v := range hooks {
+		matchers, _ := v.([]any)
+		if kept := withoutRadar(matchers); len(kept) > 0 {
+			hooks[ev] = kept
+		} else {
+			delete(hooks, ev)
+		}
+	}
+	// Second pass: add fresh radar entries for current Events.
 	for _, ev := range Events {
 		matchers, _ := hooks[ev].([]any)
-		matchers = withoutRadar(matchers)
+		if matchers == nil {
+			matchers = []any{}
+		}
 		matchers = append(matchers, map[string]any{
 			"hooks": []any{map[string]any{
 				"type":    "command",

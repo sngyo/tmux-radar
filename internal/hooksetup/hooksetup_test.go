@@ -191,3 +191,54 @@ func TestInstallCreatesDistinctBackupsWithSubsecondPrecision(t *testing.T) {
 		t.Errorf("first backup must hold original content, got %q", string(b))
 	}
 }
+
+func TestInstallSweepsStaleRadarFromDroppedEvents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	// Pre-populate with radar entries under TaskCreated/TaskCompleted (dropped events)
+	// plus a foreign entry under TaskCreated.
+	os.WriteFile(path, []byte(`{"hooks":{"TaskCreated":[
+		{"hooks":[{"type":"command","command":"afplay /done.aiff"}]},
+		{"hooks":[{"type":"command","command":"/old/tmux-radar hook TaskCreated","timeout":5}]}
+	],"TaskCompleted":[
+		{"hooks":[{"type":"command","command":"/old/tmux-radar hook TaskCompleted","timeout":5}]}
+	]},"model":"opus"}`), 0o644)
+
+	if err := Install(path, "/new/tmux-radar"); err != nil {
+		t.Fatal(err)
+	}
+
+	m := read(t, path)
+	hooks := m["hooks"].(map[string]any)
+
+	// TaskCreated should still exist with only the foreign entry (radar swept).
+	taskCreated, ok := hooks["TaskCreated"].([]any)
+	if !ok || len(taskCreated) != 1 {
+		t.Fatalf("TaskCreated: want 1 entry (foreign), got %v", taskCreated)
+	}
+	foreign := taskCreated[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if foreign["command"] != "afplay /done.aiff" {
+		t.Errorf("TaskCreated: foreign command lost, got %v", foreign["command"])
+	}
+
+	// TaskCompleted should be deleted entirely (was pure radar).
+	if _, ok := hooks["TaskCompleted"]; ok {
+		t.Error("TaskCompleted: pure radar entry should be deleted entirely")
+	}
+
+	// Every current Events member should exist with exactly one radar entry.
+	for _, ev := range Events {
+		matchers, ok := hooks[ev].([]any)
+		if !ok || len(matchers) != 1 {
+			t.Fatalf("%s: want 1 radar entry, got %v", ev, matchers)
+		}
+		cmd := matchers[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"].(string)
+		if cmd != "/new/tmux-radar hook "+ev {
+			t.Errorf("%s: wrong radar command, got %q", ev, cmd)
+		}
+	}
+
+	// Other keys must survive.
+	if m["model"] != "opus" {
+		t.Error("unrelated keys must survive")
+	}
+}
