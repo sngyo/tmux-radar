@@ -41,7 +41,7 @@ func Install(settingsPath, binPath string) error {
 		return err
 	}
 	if b, err := os.ReadFile(settingsPath); err == nil {
-		backup := fmt.Sprintf("%s.bak-%s", settingsPath, time.Now().Format("20060102-150405"))
+		backup := fmt.Sprintf("%s.bak-%s", settingsPath, time.Now().Format("20060102-150405.000000000"))
 		if err := os.WriteFile(backup, b, 0o644); err != nil {
 			return err
 		}
@@ -84,22 +84,25 @@ func Uninstall(settingsPath string) error {
 	return save(settingsPath, m)
 }
 
-// withoutRadar filters out matcher groups whose every command is radar's.
+// withoutRadar removes radar commands from matcher groups, dropping groups
+// that become empty.
 func withoutRadar(matchers []any) []any {
 	var kept []any
 	for _, raw := range matchers {
 		group, _ := raw.(map[string]any)
 		cmds, _ := group["hooks"].([]any)
-		radar := len(cmds) > 0
+		var foreign []any
 		for _, c := range cmds {
 			cm, _ := c.(map[string]any)
 			s, _ := cm["command"].(string)
 			if !strings.Contains(s, marker) {
-				radar = false
+				foreign = append(foreign, c)
 			}
 		}
-		if !radar {
-			kept = append(kept, raw)
+		if len(foreign) > 0 {
+			// Keep the group with only foreign commands.
+			group["hooks"] = foreign
+			kept = append(kept, group)
 		}
 	}
 	return kept

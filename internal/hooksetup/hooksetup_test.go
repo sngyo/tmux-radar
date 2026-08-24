@@ -124,3 +124,70 @@ func TestUninstallRemovesOnlyRadarEntries(t *testing.T) {
 		t.Error("unrelated keys must survive")
 	}
 }
+
+func TestInstallHandlesMixedMatcherGroups(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	// Start with a mixed group: foreign + stale radar
+	os.WriteFile(path, []byte(`{"hooks":{"Stop":[
+		{"hooks":[
+			{"type":"command","command":"afplay /done.aiff"},
+			{"type":"command","command":"/old/tmux-radar hook Stop","timeout":5}
+		]}
+	]}}`), 0o644)
+	if err := Install(path, "/new/tmux-radar"); err != nil {
+		t.Fatal(err)
+	}
+	m := read(t, path)
+	stop := m["hooks"].(map[string]any)["Stop"].([]any)
+	if len(stop) != 2 {
+		t.Fatalf("want foreign group (filtered) + fresh radar entry, got %d groups", len(stop))
+	}
+	// First group should have only the foreign command.
+	first := stop[0].(map[string]any)["hooks"].([]any)
+	if len(first) != 1 {
+		t.Fatalf("mixed group after install should have 1 command, got %d", len(first))
+	}
+	cmd := first[0].(map[string]any)["command"].(string)
+	if cmd != "afplay /done.aiff" {
+		t.Errorf("foreign command must survive, got %q", cmd)
+	}
+	// Second group should be the fresh radar entry.
+	second := stop[1].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if second["command"] != "/new/tmux-radar hook Stop" {
+		t.Errorf("fresh radar entry expected, got %v", second["command"])
+	}
+}
+
+func TestInstallCreatesDistinctBackupsWithSubsecondPrecision(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	os.WriteFile(path, []byte(`{"a":1}`), 0o644)
+
+	// First install
+	if err := Install(path, "/bin/tmux-radar"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second install (back-to-back)
+	if err := Install(path, "/bin/tmux-radar"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	backups := []string{}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "settings.json.bak-") {
+			backups = append(backups, e.Name())
+		}
+	}
+
+	if len(backups) != 2 {
+		t.Fatalf("want 2 distinct backups, got %d: %v", len(backups), backups)
+	}
+
+	// First backup must contain original pre-install content.
+	b, _ := os.ReadFile(filepath.Join(dir, backups[0]))
+	if string(b) != `{"a":1}` {
+		t.Errorf("first backup must hold original content, got %q", string(b))
+	}
+}
