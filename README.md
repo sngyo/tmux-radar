@@ -1,7 +1,7 @@
 # tmux-radar
 
 `tmux-radar` is a lightweight companion tool for tmux users who run multiple
-AI coding agents (Claude Code first; others later) across many windows and
+AI coding agents (Claude Code and the OpenAI Codex CLI) across many windows and
 panes. It gives you a persistent agent sidebar that lives *outside* tmux
 (e.g. in a terminal split next to it), so you can always see which agents are
 working, blocked, or done without switching windows; a compact counter in the
@@ -164,6 +164,14 @@ popup_height     = "60%"
 process_names = ['^claude$', '^[0-9]+\.[0-9]+\.[0-9]+$']
 working  = ['esc to interrupt', 'Waiting for \d+ background agents? to finish']
 blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
+
+[agents.codex]
+# The npm-installed Codex CLI runs as "node <shim>", so pane_current_command
+# never says "codex"; the poller also matches these patterns against the
+# pane's descendant process names (one `ps` per tick) to see through wrappers.
+process_names = ['^codex$']
+working  = ['(?m)^• Working \([^)]*esc to interrupt\)']
+blocked  = ['(?m)^› \d+\. ', '(?m)^\s*Press enter to (confirm|continue)\b']
 ```
 
 - `poll_interval_ms` — how often, in milliseconds, the poller re-scans tmux
@@ -178,12 +186,18 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 - `popup_width` / `popup_height` — the `tmux-radar popup` window geometry,
   passed straight to `display-popup -w/-h`: a cell count (`"120"`) or a
   percentage of the client (`"60%"`). Defaults to a landscape 60% × 60%.
-- `[agents.claude]` — per-agent detection rules. A partial override (e.g. a
-  config that only sets `blocked`) inherits the remaining fields
-  (`process_names`, `working`) from the compiled-in defaults for that agent,
-  so you never have to restate patterns you don't want to change.
+- `[agents.claude]` / `[agents.codex]` — per-agent detection rules, applied
+  only to panes recognized as that agent (a codex pane is never judged by
+  claude patterns and vice versa). A partial override (e.g. a config that
+  only sets `blocked`) inherits the remaining fields (`process_names`,
+  `working`) from the compiled-in defaults for that agent, so you never have
+  to restate patterns you don't want to change; a built-in agent your config
+  never mentions keeps its defaults entirely.
   - `process_names` — regexes matched against tmux's `pane_current_command`
-    to recognize the agent's process.
+    to recognize the agent's process. Panes no agent claims by command get a
+    second chance: the same regexes are matched against the pane's descendant
+    process names, which recognizes agents started through wrapper launchers
+    (the npm Codex CLI shows up as `node`).
   - `working` — regexes matched against captured pane output to detect the
     `working` state.
   - `blocked` — regexes matched against captured pane output to detect the
@@ -193,8 +207,8 @@ blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
 
 | State | Rule (defaults; regex list in config) |
 |---|---|
-| `working` | Footer contains `esc to interrupt`, or the pane is waiting for background agents to finish |
-| `blocked` | Permission / question UI detected: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome |
+| `working` | Claude Code: footer contains `esc to interrupt`, or the pane is waiting for background agents to finish. Codex: the `• Working (7s • esc to interrupt)` status line |
+| `blocked` | Permission / question UI detected. Claude Code: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome. Codex: `› 1.`-style approval/trust dialogs and their `Press enter to confirm` footer |
 | `idle` | Agent process alive, none of the above |
 | `done` (overlay) | On a `working → idle` transition, armed as an unseen-completion marker. Displayed as `✓` until you visit the pane (C-t a / click), then plain `idle`. |
 

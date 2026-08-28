@@ -5,14 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/sngyo/tmux-radar/internal/detect"
-	"github.com/sngyo/tmux-radar/internal/hookevents"
 	"github.com/sngyo/tmux-radar/internal/poller"
-	"github.com/sngyo/tmux-radar/internal/tmux"
 )
 
 // AgentRules is the per-agent-kind detection config.
@@ -49,6 +47,11 @@ func Default() Config {
 				ProcessNames: poller.DefaultProcessPatterns(),
 				Working:      detect.DefaultWorkingPatterns(),
 				Blocked:      detect.DefaultBlockedPatterns(),
+			},
+			"codex": {
+				ProcessNames: poller.DefaultCodexProcessPatterns(),
+				Working:      detect.DefaultCodexWorkingPatterns(),
+				Blocked:      detect.DefaultCodexBlockedPatterns(),
 			},
 		},
 	}
@@ -92,10 +95,13 @@ func Load(path string) (Config, error) {
 	// Field-level defaulting: TOML decoding replaces a re-declared agent
 	// table wholesale, so an entry like [agents.claude] overriding only
 	// `blocked` would otherwise silently drop the default process_names and
-	// working patterns (and with them, all pane matching).
+	// working patterns (and with them, all pane matching). A built-in kind
+	// the file never mentions is kept whole: declaring [agents.claude] must
+	// not silently disable codex detection.
 	for k, d := range Default().Agents {
 		a, ok := c.Agents[k]
 		if !ok {
+			c.Agents[k] = d
 			continue
 		}
 		if len(a.ProcessNames) == 0 {
@@ -112,61 +118,53 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
-// DetectRules compiles the configured patterns (all agent kinds merged).
-func (c Config) DetectRules() (detect.Rules, error) {
-	var r detect.Rules
-	for _, a := range c.Agents {
+// Kinds compiles the configured agent tables into poller kinds, one per
+// agent, sorted by name for deterministic match order.
+func (c Config) Kinds() ([]poller.Kind, error) {
+	names := make([]string, 0, len(c.Agents))
+	for name := range c.Agents {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	kinds := make([]poller.Kind, 0, len(names))
+	for _, name := range names {
+		a := c.Agents[name]
+		k := poller.Kind{Name: name}
+		for _, p := range a.ProcessNames {
+			re, err := regexp.Compile(p)
+			if err != nil {
+				return nil, err
+			}
+			k.Process = append(k.Process, re)
+		}
 		for _, p := range a.Working {
 			re, err := regexp.Compile(p)
 			if err != nil {
-				return r, err
+				return nil, err
 			}
-			r.Working = append(r.Working, re)
+			k.Rules.Working = append(k.Rules.Working, re)
 		}
 		for _, p := range a.Blocked {
 			re, err := regexp.Compile(p)
 			if err != nil {
-				return r, err
+				return nil, err
 			}
-			r.Blocked = append(r.Blocked, re)
+			k.Rules.Blocked = append(k.Rules.Blocked, re)
 		}
+		kinds = append(kinds, k)
 	}
-	return r, nil
+	return kinds, nil
 }
 
 // PollerDeps builds poller dependencies from the config.
 // process_names entries are regexes: Claude Code's auto-updater installs
 // version-named binaries ("2.1.199"), so exact matching would find nothing.
 func (c Config) PollerDeps() (poller.Deps, error) {
-	rules, err := c.DetectRules()
+	kinds, err := c.Kinds()
 	if err != nil {
 		return poller.Deps{}, err
 	}
-	var pats []*regexp.Regexp
-	for _, a := range c.Agents {
-		for _, p := range a.ProcessNames {
-			re, err := regexp.Compile(p)
-			if err != nil {
-				return poller.Deps{}, err
-			}
-			pats = append(pats, re)
-		}
-	}
-	return poller.Deps{
-		ListPanes:       tmux.ListPanes,
-		Capture:         tmux.CapturePane,
-		Rules:           rules,
-		ProcessPatterns: pats,
-		CurrentFocus:    tmux.CurrentFocus,
-		HookWorking: func(paneID string) bool {
-			evs, err := hookevents.ReadPane(hookevents.DefaultDir(), paneID)
-			if err != nil {
-				return false
-			}
-			return hookevents.Working(evs, time.Now())
-		},
-		GCHookEvents: func(alive map[string]bool) {
-			hookevents.GCDead(hookevents.DefaultDir(), alive)
-		},
-	}, nil
+	deps := poller.DefaultDeps()
+	deps.Kinds = kinds
+	return deps, nil
 }

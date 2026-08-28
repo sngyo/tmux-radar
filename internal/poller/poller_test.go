@@ -14,6 +14,22 @@ import (
 
 var errPaneGone = errors.New("pane gone")
 
+func claudeOnlyKinds() []Kind {
+	return []Kind{{
+		Name:    "claude",
+		Process: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		Rules:   detect.DefaultRules(),
+	}}
+}
+
+func claudeAndCodexKinds() []Kind {
+	return append(claudeOnlyKinds(), Kind{
+		Name:    "codex",
+		Process: []*regexp.Regexp{regexp.MustCompile("^codex$")},
+		Rules:   detect.CodexRules(),
+	})
+}
+
 func TestRunOnceFiltersAndDetects(t *testing.T) {
 	d := Deps{
 		ListPanes: func() ([]tmux.Pane, error) {
@@ -25,9 +41,8 @@ func TestRunOnceFiltersAndDetects(t *testing.T) {
 		Capture: func(paneID string) (string, error) {
 			return "✶ Cerebrating… (esc to interrupt)", nil
 		},
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	now := time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
 	s, err := RunOnce(state.Snapshot{}, d, now)
@@ -50,9 +65,8 @@ func TestRunOnceSkipsFailedCaptures(t *testing.T) {
 		Capture: func(string) (string, error) {
 			return "", errPaneGone
 		},
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -72,10 +86,9 @@ func TestRunOnceClearsDoneOnVisitedPane(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Command: "claude"}, {ID: "%2", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return "idle prompt", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%1"}, nil },
+		Capture:      func(string) (string, error) { return "idle prompt", nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%1"}, nil },
 	}
 	s, err := RunOnce(prev, d, time.Now())
 	if err != nil {
@@ -111,10 +124,9 @@ func TestRunOncePromotesIdleToWorkingWhileSubagentsRun(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return screen, nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Capture:      func(string) (string, error) { return screen, nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -137,10 +149,9 @@ func TestRunOnceKeepsIdleWhenAllSubagentsDone(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return screen, nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Capture:      func(string) (string, error) { return screen, nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {
@@ -162,11 +173,10 @@ func TestHookWorkingUpgradesIdle(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return "❯ \n", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
-		HookWorking:     func(paneID string) bool { return true },
+		Capture:      func(string) (string, error) { return "❯ \n", nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		HookWorking:  func(paneID string) bool { return true },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil || len(s.Agents) != 1 {
@@ -184,11 +194,10 @@ func TestHookWorkingDoesNotMaskBlocked(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return "Do you want to proceed?\n❯ 1. Yes\n", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
-		HookWorking:     func(paneID string) bool { return true },
+		Capture:      func(string) (string, error) { return "Do you want to proceed?\n❯ 1. Yes\n", nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		HookWorking:  func(paneID string) bool { return true },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil || len(s.Agents) != 1 {
@@ -212,11 +221,10 @@ func TestRunOnceCallsGCHookEventsWithAllListedPaneIDs(t *testing.T) {
 				{ID: "%2", Command: "zsh"},
 			}, nil
 		},
-		Capture:         func(string) (string, error) { return "idle prompt", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
-		GCHookEvents:    func(alive map[string]bool) { gotAlive = alive },
+		Capture:      func(string) (string, error) { return "idle prompt", nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		GCHookEvents: func(alive map[string]bool) { gotAlive = alive },
 	}
 	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
 		t.Fatal(err)
@@ -234,25 +242,124 @@ func TestRunOnceToleratesNilGCHookEvents(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return "idle prompt", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Capture:      func(string) (string, error) { return "idle prompt", nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestDefaultPatternsMatchVersionedClaudeBinary(t *testing.T) {
-	pats := DefaultDeps().ProcessPatterns
-	for _, cmd := range []string{"claude", "2.1.185"} {
-		if !matches(pats, cmd) {
-			t.Errorf("%q should match default patterns", cmd)
-		}
+// The npm-installed Codex CLI runs as "node <shim>" with the native codex
+// binary as a descendant, so pane_current_command says "node". The pane must
+// be classified codex via the descendant walk — and a node pane without a
+// codex descendant (a dev server) must stay invisible.
+func TestRunOnceResolvesWrappedCodexViaDescendants(t *testing.T) {
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{
+				{ID: "%1", Session: "main", WindowName: "cx", Command: "node", PID: 42},
+				{ID: "%2", Session: "main", WindowName: "dev", Command: "node", PID: 43},
+			}, nil
+		},
+		Capture: func(paneID string) (string, error) {
+			return "• Working (2s • esc to interrupt)\n", nil
+		},
+		Kinds: claudeAndCodexKinds(),
+		PaneDescendants: func(pids []int) (map[int][]string, error) {
+			return map[int][]string{
+				42: {"node", "codex", "node_repl"},
+				43: {"node", "esbuild"},
+			}, nil
+		},
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
-	if matches(pats, "zsh") {
-		t.Error("zsh must not match default patterns")
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Agents) != 1 {
+		t.Fatalf("agents = %d, want 1 (only the pane with a codex descendant)", len(s.Agents))
+	}
+	if s.Agents[0].Kind != "codex" || s.Agents[0].State != detect.Working {
+		t.Errorf("got %+v, want kind=codex state=working", s.Agents[0])
+	}
+}
+
+// The descendant walk costs a ps invocation; when every pane's command
+// matched a kind directly there is nothing left to resolve and it must not run.
+func TestRunOnceSkipsDescendantWalkWhenCommandsMatchDirectly(t *testing.T) {
+	called := false
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Command: "claude", PID: 42}}, nil
+		},
+		Capture: func(string) (string, error) { return "idle prompt", nil },
+		Kinds:   claudeAndCodexKinds(),
+		PaneDescendants: func(pids []int) (map[int][]string, error) {
+			called = true
+			return nil, nil
+		},
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("PaneDescendants must not be called when all panes matched directly")
+	}
+}
+
+// Hook events and the subagent-list scrape are Claude Code instrumentation;
+// they must not touch a codex pane. A stale claude event log left on a
+// reused pane id — or a codex screen that happens to echo a claude-style
+// agents list — must not mark the codex pane working.
+func TestClaudeInstrumentationDoesNotApplyToCodexPanes(t *testing.T) {
+	screen := "  ⏺ main\n" +
+		"  ◯ claude   investigate the branch                 5m 24s · ↓ 125.8k tokens\n"
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{{ID: "%1", Session: "main", Command: "codex"}}, nil
+		},
+		Capture:      func(string) (string, error) { return screen, nil },
+		Kinds:        claudeAndCodexKinds(),
+		HookWorking:  func(paneID string) bool { return true },
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+	}
+	s, err := RunOnce(state.Snapshot{}, d, time.Now())
+	if err != nil || len(s.Agents) != 1 {
+		t.Fatalf("snapshot: %+v, %v", s, err)
+	}
+	if s.Agents[0].State != detect.Idle {
+		t.Errorf("state = %s, want idle (claude hook/scrape signals must not leak)", s.Agents[0].State)
+	}
+	if len(s.Agents[0].Subagents) != 0 {
+		t.Errorf("subagents = %+v, want none on a codex pane", s.Agents[0].Subagents)
+	}
+}
+
+func TestDefaultKindsMatchKnownBinaries(t *testing.T) {
+	kinds := DefaultDeps().Kinds
+	cases := []struct {
+		command string
+		want    string // matched kind name, "" = no match
+	}{
+		{"claude", "claude"},
+		{"2.1.185", "claude"}, // auto-updater installs version-named binaries
+		{"codex", "codex"},
+		{"zsh", ""},
+		{"node", ""}, // wrappers resolve via descendants, never by name
+	}
+	for _, c := range cases {
+		k := matchKind(kinds, c.command)
+		got := ""
+		if k != nil {
+			got = k.Name
+		}
+		if got != c.want {
+			t.Errorf("%q matched kind %q, want %q", c.command, got, c.want)
+		}
 	}
 }
 
@@ -261,9 +368,8 @@ func TestRunOnceRecordsFocus(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", WindowIndex: 14, Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return "idle prompt", nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
+		Capture: func(string) (string, error) { return "idle prompt", nil },
+		Kinds:   claudeOnlyKinds(),
 		CurrentFocus: func() (tmux.Focus, error) {
 			return tmux.Focus{Session: "main", WindowIndex: 14, PaneID: "%1"}, nil
 		},
@@ -286,10 +392,9 @@ func TestRunOnceScrapesSubagents(t *testing.T) {
 		ListPanes: func() ([]tmux.Pane, error) {
 			return []tmux.Pane{{ID: "%1", Session: "main", Command: "claude"}}, nil
 		},
-		Capture:         func(string) (string, error) { return screen, nil },
-		Rules:           detect.DefaultRules(),
-		ProcessPatterns: []*regexp.Regexp{regexp.MustCompile("^claude$")},
-		CurrentFocus:    func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
+		Capture:      func(string) (string, error) { return screen, nil },
+		Kinds:        claudeOnlyKinds(),
+		CurrentFocus: func() (tmux.Focus, error) { return tmux.Focus{PaneID: "%elsewhere"}, nil },
 	}
 	s, err := RunOnce(state.Snapshot{}, d, time.Now())
 	if err != nil {

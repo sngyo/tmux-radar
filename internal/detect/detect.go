@@ -72,11 +72,46 @@ func DefaultBlockedPatterns() []string {
 // footer is no longer last and the agent is not blocked.
 var askQuestionFooterRe = regexp.MustCompile(`^\s*Enter to select\b`)
 
+// DefaultCodexWorkingPatterns and DefaultCodexBlockedPatterns are the
+// canonical OpenAI Codex CLI screen patterns (captured from codex-cli
+// 0.150). Config defaults reuse these exact strings.
+func DefaultCodexWorkingPatterns() []string {
+	return []string{
+		// status line while a turn runs: "• Working (7s • esc to interrupt)".
+		// Anchored to column 0 so the line quoted inside indented
+		// conversation output cannot match.
+		`(?m)^• Working \([^)]*esc to interrupt\)`,
+	}
+}
+
+func DefaultCodexBlockedPatterns() []string {
+	return []string{
+		// approval and trust dialogs render numbered options with a "›"
+		// caret (U+203A, distinct from Claude's U+276F) on the selected row
+		// at column 0: "› 1. Yes, proceed (y)". The input-box prompt is also
+		// a column-0 "›" but is never followed by "N.".
+		`(?m)^› \d+\. `,
+		// dialog footer: "Press enter to confirm or esc to cancel" (command
+		// approval) / "Press enter to continue" (directory trust). Answered
+		// dialogs collapse to a "✔ You approved …" line, so neither pattern
+		// lingers after the choice.
+		`(?m)^\s*Press enter to (confirm|continue)\b`,
+	}
+}
+
 // DefaultRules returns the built-in Claude Code detection rules.
 func DefaultRules() Rules {
 	return Rules{
 		Working: compile(DefaultWorkingPatterns()...),
 		Blocked: compile(DefaultBlockedPatterns()...),
+	}
+}
+
+// CodexRules returns the built-in OpenAI Codex CLI detection rules.
+func CodexRules() Rules {
+	return Rules{
+		Working: compile(DefaultCodexWorkingPatterns()...),
+		Blocked: compile(DefaultCodexBlockedPatterns()...),
 	}
 }
 
@@ -129,9 +164,16 @@ func lastNonBlankLine(s string) string {
 	return ""
 }
 
-// tail returns the last n lines of s.
+// tail returns the last n rendered lines of s. Trailing blank lines are
+// dropped first: capture-pane pads the screen to the full pane height, and a
+// top-down TUI (Codex draws content from the top; only Claude Code pins its
+// input box to the pane bottom) can leave the entire bottom of a tall pane
+// blank, which would otherwise push every signal out of the tail window.
 func tail(s string, n int) string {
 	lines := strings.Split(s, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}

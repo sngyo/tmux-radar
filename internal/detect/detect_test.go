@@ -41,6 +41,36 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestDetectCodex(t *testing.T) {
+	r := CodexRules()
+	cases := []struct {
+		file string
+		want State
+	}{
+		{"codex_working.txt", Working},
+		{"codex_blocked_approval.txt", Blocked},
+		{"codex_blocked_trust.txt", Blocked},
+		{"codex_idle.txt", Idle},
+		{"codex_idle_after_work.txt", Idle},
+	}
+	for _, c := range cases {
+		if got := r.Detect(fixture(t, c.file)); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.file, got, c.want)
+		}
+	}
+}
+
+// Codex rules run only on codex panes, but keep them from firing on Claude
+// screens anyway: an overly generic pattern (e.g. bare "esc to interrupt")
+// would silently blur the two kinds' semantics.
+func TestCodexRulesIgnoreClaudeScreens(t *testing.T) {
+	for _, f := range []string{"working.txt", "blocked_permission.txt", "idle.txt"} {
+		if got := CodexRules().Detect(fixture(t, f)); got != Idle {
+			t.Errorf("%s under codex rules: got %s, want idle", f, got)
+		}
+	}
+}
+
 // A permission prompt shown while a spinner line is still on screen must win.
 func TestBlockedBeatsWorking(t *testing.T) {
 	screen := fixture(t, "working.txt") + "\n" + fixture(t, "blocked_permission.txt")

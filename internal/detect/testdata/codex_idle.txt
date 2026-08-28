@@ -1,0 +1,82 @@
+╭──────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.150.1)                       │
+│                                                  │
+│ model:     gpt-5.6-sol high   /model to change   │
+│ directory: /private/tmp/…/scratchpad/codex-probe │
+╰──────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+• You have 1 usage limit reset available. Run /usage to use one.
+
+
+› Ask Codex to do anything
+
+  gpt-5.6-sol high · /private/tmp/claude-501/-Users-sngyo-Documents-sngyo-tmux-radar/cccf595d-7fe1-4d56-b663-bf0ca2fd44e2/scratchpad/codex-probe
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

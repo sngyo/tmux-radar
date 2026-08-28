@@ -17,10 +17,11 @@ type Pane struct {
 	PaneIndex   int
 	Title       string // user- or app-set pane title ("" if unset)
 	Command     string // pane_current_command, e.g. "claude"
+	PID         int    // pane_pid: the pane's root process (usually the shell)
 }
 
 // panesFormat uses tabs as field separators; tmux names never sanely contain tabs.
-const panesFormat = "#{pane_id}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}"
+const panesFormat = "#{pane_id}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t#{pane_pid}"
 
 // ListPanes returns every pane on the local tmux server.
 func ListPanes() ([]Pane, error) {
@@ -36,17 +37,18 @@ func ParsePanes(out string) ([]Pane, error) {
 	var panes []Pane
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		f := strings.Split(line, "\t")
-		if len(f) != 7 {
+		if len(f) != 8 {
 			continue
 		}
 		wi, err1 := strconv.Atoi(f[2])
 		pi, err2 := strconv.Atoi(f[4])
-		if err1 != nil || err2 != nil {
+		pid, err3 := strconv.Atoi(f[7])
+		if err1 != nil || err2 != nil || err3 != nil {
 			continue
 		}
 		panes = append(panes, Pane{
 			ID: f[0], Session: f[1], WindowIndex: wi, WindowName: f[3],
-			PaneIndex: pi, Title: f[5], Command: f[6],
+			PaneIndex: pi, Title: f[5], Command: f[6], PID: pid,
 		})
 	}
 	return panes, nil
