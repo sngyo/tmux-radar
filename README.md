@@ -20,9 +20,9 @@ AGENTS                8 agents
   11:web
  ○ └ ✳ waiting for input
 
-  12:api                         ← the active window is highlighted
- ⠸ └ ✳ fixing tests              ← working rows spin
-     └ ○ general-purpose · adding coverage   ← background subagents nest deeper
+▎ 12:api                        ← the active window: blue bar + band
+▎⠸ └ ✳ fixing tests              ← working rows spin
+▎    └ ○ general-purpose · adding coverage   ← background subagents nest deeper
 
   14:worker
  ⠴ ├ ✳ building

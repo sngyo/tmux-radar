@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/sngyo/tmux-radar/internal/detect"
@@ -42,6 +43,56 @@ func TestViewFocusedWindowRowsSpanPaneWidth(t *testing.T) {
 	}
 	if w := lipgloss.Width(otherAnchor); w == 30 {
 		t.Errorf("unfocused anchor must keep its natural width: %q", otherAnchor)
+	}
+}
+
+// stripANSI drops escape sequences so tests can assert on visible text.
+func stripANSI(s string) string { return ansi.Strip(s) }
+
+func TestViewFocusedWindowRowsCarryAccentBar(t *testing.T) {
+	a := &App{width: 30, snap: state.Snapshot{
+		Agents: []state.Agent{
+			mk("main", 5, "api", 1, "", detect.Working, t0),
+			mk("main", 6, "web", 1, "", detect.Idle, t0),
+		},
+		Focus: tmux.Focus{Session: "main", WindowIndex: 5, PaneID: "%api"},
+	}}
+	lines := strings.Split(a.View(), "\n")
+	var focusedAnchor, focusedAgent, otherAnchor string
+	for i, line := range lines {
+		if strings.Contains(line, "5:api") {
+			focusedAnchor = line
+			focusedAgent = lines[i+1]
+		}
+		if strings.Contains(line, "6:web") {
+			otherAnchor = line
+		}
+	}
+	if focusedAnchor == "" || focusedAgent == "" || otherAnchor == "" {
+		t.Fatal("rows missing from view")
+	}
+	// every row of the focused window starts with the bar so the block reads
+	// as one unit; the bar is a glyph, not a background, so it survives a
+	// terminal whose background sits close to the band color
+	for _, line := range []string{focusedAnchor, focusedAgent} {
+		if !strings.HasPrefix(stripANSI(line), currentBar) {
+			t.Errorf("focused row must start with %q: %q", currentBar, stripANSI(line))
+		}
+		if w := lipgloss.Width(line); w != 30 {
+			t.Errorf("focused row width = %d, want 30: %q", w, line)
+		}
+	}
+	if strings.Contains(stripANSI(otherAnchor), currentBar) {
+		t.Errorf("unfocused row must not carry the bar: %q", stripANSI(otherAnchor))
+	}
+	// the keyboard cursor keeps its caret in the gutter, replacing the bar
+	a.popup, a.selPane = true, "%api"
+	for _, line := range strings.Split(a.View(), "\n") {
+		if strings.Contains(line, "api") && !strings.Contains(line, "5:api") {
+			if got := stripANSI(line); !strings.HasPrefix(got, "❯") || strings.Contains(got, currentBar) {
+				t.Errorf("selected row must show the caret, not the bar: %q", got)
+			}
+		}
 	}
 }
 

@@ -33,9 +33,15 @@ var styles = map[RowKind]lipgloss.Style{
 	RowSubagent: lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
 }
 
-// currentBg marks the attached client's active window: a subtle band that
-// keeps each row's own foreground color readable on top.
-var currentBg = lipgloss.Color("236")
+// currentBg marks the attached client's active window: a band that keeps
+// each row's own foreground color readable on top. Dark themes sit close to
+// the low greys, so the band alone is easy to lose — currentBar carries the
+// mark as a glyph in the gutter column, which no background can swallow.
+var currentBg = lipgloss.Color("238")
+
+const currentBar = "▎"
+
+var currentBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Background(currentBg)
 
 // pendingStyle grays out agents whose pane title carries the [PENDING]
 // marker: parked on purpose, so no working green and no bold.
@@ -47,7 +53,7 @@ var dropMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold
 
 // selectionBg marks the popup's keyboard selection; brighter than the
 // focused-window band so the cursor reads on top of it.
-var selectionBg = lipgloss.Color("238")
+var selectionBg = lipgloss.Color("240")
 
 var displayStyles = map[state.Display]lipgloss.Style{
 	state.DisplayWorking: lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),
@@ -538,6 +544,9 @@ func (a *App) View() string {
 		}
 		if r.Current {
 			st = st.Background(currentBg)
+			if r.Kind == RowWindow {
+				st = st.Bold(true)
+			}
 		}
 		text := r.Text
 		selected := a.popup && r.Kind == RowAgent && r.PaneID != "" && r.PaneID == a.selPane
@@ -545,19 +554,26 @@ func (a *App) View() string {
 			text = "❯" + strings.TrimPrefix(text, " ")
 			st = st.Background(selectionBg)
 		}
+		// the gutter column is free on every row (all text starts with a
+		// space); the focused window claims it for the bar unless the
+		// keyboard cursor already sits there
+		prefix := ""
+		if r.Current && !selected && strings.HasPrefix(text, " ") {
+			prefix, text = currentBarStyle.Render(currentBar), text[1:]
+		}
 		// background rows stretch their band across the pane
 		if (r.Kind == RowAlert || r.Current || selected) && a.width > 0 {
-			st = st.Width(a.width)
+			st = st.Width(a.width - lipgloss.Width(prefix))
 		}
 		if a.drag != nil && a.drag.target.ok && a.drag.target.row == i {
 			// the insertion line replaces the gap row's own text; the row
 			// count stays put so the mouse mapping holds during the drag
-			text, st = dropMarker(a.width), dropMarkerStyle
+			prefix, text, st = "", dropMarker(a.width), dropMarkerStyle
 		}
 		if i > 0 {
 			out += "\n"
 		}
-		out += st.Render(text)
+		out += prefix + st.Render(text)
 	}
 	return out
 }
