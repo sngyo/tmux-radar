@@ -32,13 +32,17 @@ const (
 // Row is one sidebar line plus the metadata the app needs for styling
 // and mouse-click resolution.
 type Row struct {
-	Text       string
-	Kind       RowKind
-	Display    state.Display
-	PaneID     string // set on RowAgent
-	ToggleFold bool   // set on RowFold
-	Current    bool   // row belongs to the attached client's active window
-	Pending    bool   // pane title carries the [PENDING] marker: gray the row out
+	Text    string
+	Kind    RowKind
+	Display state.Display
+	PaneID  string // set on RowAgent
+	// window identity for drag & drop: session on group/window/agent/
+	// subagent rows, window index on window/agent/subagent rows
+	Session     string
+	WindowIndex int
+	ToggleFold  bool // set on RowFold
+	Current     bool // row belongs to the attached client's active window
+	Pending     bool // pane title carries the [PENDING] marker: gray the row out
 }
 
 // ViewData is everything Render needs. Now is injected for testability.
@@ -148,7 +152,7 @@ func Render(v ViewData) []Row {
 		}
 	}
 
-	footer := "C-t a jump · click jump"
+	footer := "C-t a jump · click jump · drag reorder"
 	if v.Popup {
 		footer = "n/p move · enter keep · esc back"
 	}
@@ -168,7 +172,7 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 	for i, a := range agents {
 		session := sanitize(a.Session)
 		if session != lastSession {
-			rows = appendSpaced(rows, Row{Text: groupRule(session, labelW+5), Kind: RowGroup})
+			rows = appendSpaced(rows, Row{Text: groupRule(session, labelW+5), Kind: RowGroup, Session: a.Session})
 			lastSession = session
 			prevWindow = ""
 		}
@@ -178,7 +182,7 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 			winLabel := fmt.Sprintf("%d:%s", a.WindowIndex, sanitize(a.WindowName))
 			rows = appendSpaced(rows, Row{
 				Text: "  " + truncate(winLabel, labelW+3), Kind: RowWindow, PaneID: a.PaneID,
-				Current: current,
+				Current: current, Session: a.Session, WindowIndex: a.WindowIndex,
 			})
 			prevWindow = windowKey
 		}
@@ -199,6 +203,7 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 		rows = append(rows, Row{
 			Text: fmt.Sprintf(" %s %s %s", icon, branch, truncate(title, labelW)),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID, Current: current,
+			Session: a.Session, WindowIndex: a.WindowIndex,
 			Pending: strings.Contains(strings.ToUpper(title), "[PENDING]"),
 		})
 		rows = append(rows, subagentRows(a, labelW, current, v.Frame)...)
@@ -231,6 +236,7 @@ func subagentRows(a state.Agent, labelW int, current bool, frame int) []Row {
 		rows = append(rows, Row{
 			Text: fmt.Sprintf("     %s %s %s", branch, icon, truncate(label, budget)),
 			Kind: RowSubagent, PaneID: a.PaneID, Current: current,
+			Session: a.Session, WindowIndex: a.WindowIndex,
 		})
 	}
 	return rows

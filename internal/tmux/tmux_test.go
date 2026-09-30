@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +66,16 @@ func TestParseFocusNoAttachedClientFails(t *testing.T) {
 		if _, err := ParseFocus(out); err == nil {
 			t.Errorf("ParseFocus(%q) should fail", out)
 		}
+	}
+}
+
+func TestMoveWindowArgs(t *testing.T) {
+	got := strings.Join(moveWindowArgs("main", 26, 2, true), " ")
+	if want := "move-window -a -s main:26 -t main:2"; got != want {
+		t.Errorf("after: %q, want %q", got, want)
+	}
+	got = strings.Join(moveWindowArgs("main", 26, 2, false), " ")
+	if want := "move-window -b -s main:26 -t main:2"; got != want {
+		t.Errorf("before: %q, want %q", got, want)
 	}
 }

@@ -483,3 +483,180 @@ func TestPopupAttentionJumpOnA(t *testing.T) {
 		t.Errorf("expected quit, got %T", cmd())
 	}
 }
+
+// dragApp builds a sidebar with three single-pane windows in one session
+// and records every move-window / jump call. Rows (width 40):
+//
+//	0 header · 1 rule(s) · 2 win1 · 3 agent1 · 4 spacer · 5 win2 · 6 agent2
+//	7 spacer · 8 win3 · 9 agent3 · 10 footer
+func dragApp() (*App, *[]string, *[]string) {
+	var moves, jumps []string
+	a := &App{width: 40, snap: state.Snapshot{Agents: []state.Agent{
+		mk("s", 1, "api", 1, "first", detect.Idle, t0),
+		mk("s", 2, "web", 1, "second", detect.Idle, t0),
+		mk("s", 3, "db", 1, "third", detect.Idle, t0),
+	}}}
+	a.moveWindow = func(session string, src, dst int, after bool) error {
+		moves = append(moves, fmt.Sprintf("%s:%d->%d:%v", session, src, dst, after))
+		return nil
+	}
+	a.jump = func(session string, window int, pane string) error {
+		jumps = append(jumps, fmt.Sprintf("%s:%d:%s", session, window, pane))
+		return nil
+	}
+	a.View()
+	return a, &moves, &jumps
+}
+
+func rowIndex(t *testing.T, a *App, kind RowKind, contains string) int {
+	t.Helper()
+	for i, r := range a.rows {
+		if r.Kind == kind && strings.Contains(r.Text, contains) {
+			return i
+		}
+	}
+	t.Fatalf("no %v row containing %q", kind, contains)
+	return -1
+}
+
+func press(y int) tea.MouseMsg {
+	return tea.MouseMsg{Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+}
+func motion(y int) tea.MouseMsg {
+	return tea.MouseMsg{Y: y, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft}
+}
+func release(y int) tea.MouseMsg {
+	return tea.MouseMsg{Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft}
+}
+
+// Dragging a window block down and releasing on the last block's hang row
+// inserts it after that window: the nearest gap is the one below.
+func TestDragWindowDownInsertsAfterTarget(t *testing.T) {
+	a, moves, jumps := dragApp()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowAgent, "third")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	_, cmd := a.Update(release(dst))
+	if got := strings.Join(*moves, ","); got != "s:1->3:true" {
+		t.Errorf("moves = %q, want s:1->3:true", got)
+	}
+	if len(*jumps) != 0 {
+		t.Errorf("a drop must not jump, got %v", *jumps)
+	}
+	if cmd == nil {
+		t.Error("a drop must schedule a refresh poll")
+	}
+}
+
+// Releasing on a window anchor row picks the gap above it (nearest), i.e.
+// "after the previous window" — matching the marker the user saw.
+func TestDragReleaseOnAnchorUsesGapAbove(t *testing.T) {
+	a, moves, _ := dragApp()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowWindow, "3:db")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if got := strings.Join(*moves, ","); got != "s:1->2:true" {
+		t.Errorf("moves = %q, want s:1->2:true", got)
+	}
+}
+
+// Dragging up to the session rule inserts before the session's first window.
+func TestDragWindowToTopInsertsBeforeFirst(t *testing.T) {
+	a, moves, _ := dragApp()
+	src := rowIndex(t, a, RowAgent, "third") // any row of the block drags the window
+	dst := rowIndex(t, a, RowGroup, "s")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if got := strings.Join(*moves, ","); got != "s:3->1:false" {
+		t.Errorf("moves = %q, want s:3->1:false", got)
+	}
+}
+
+// Press and release inside the same window block is a plain click jump.
+func TestDragWithinSameWindowIsClick(t *testing.T) {
+	a, moves, jumps := dragApp()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowAgent, "first")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if len(*moves) != 0 {
+		t.Errorf("no move expected, got %v", *moves)
+	}
+	if got := strings.Join(*jumps, ","); got != "s:1:%api" {
+		t.Errorf("jumps = %q, want s:1:%%api", got)
+	}
+}
+
+// A gap adjacent to the source (right above or below it) is a no-op:
+// nothing moves and nothing jumps.
+func TestDragToAdjacentGapDoesNothing(t *testing.T) {
+	a, moves, jumps := dragApp()
+	src := rowIndex(t, a, RowWindow, "2:web")
+	dst := rowIndex(t, a, RowAgent, "first") // nearest gap: after 1 == before 2
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if len(*moves) != 0 || len(*jumps) != 0 {
+		t.Errorf("adjacent drop must be a no-op, got moves=%v jumps=%v", *moves, *jumps)
+	}
+}
+
+// Windows never cross sessions: a drop in another session's block is ignored.
+func TestDragAcrossSessionsIsIgnored(t *testing.T) {
+	a, moves, jumps := dragApp()
+	a.snap.Agents = append(a.snap.Agents, mk("t", 1, "other", 1, "elsewhere", detect.Idle, t0))
+	a.View()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowAgent, "elsewhere")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if len(*moves) != 0 || len(*jumps) != 0 {
+		t.Errorf("cross-session drop must be ignored, got moves=%v jumps=%v", *moves, *jumps)
+	}
+}
+
+// The popup is one-shot: no drag there, a release is still a click jump.
+func TestDragDisabledInPopup(t *testing.T) {
+	a, moves, jumps := dragApp()
+	a.popup = true
+	a.View()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowAgent, "third")
+	a.Update(press(src))
+	a.Update(motion(dst))
+	a.Update(release(dst))
+	if len(*moves) != 0 {
+		t.Errorf("popup must not move windows, got %v", *moves)
+	}
+	if got := strings.Join(*jumps, ","); got != "s:3:%db" {
+		t.Errorf("jumps = %q, want s:3:%%db", got)
+	}
+}
+
+// While dragging, the target gap shows an insertion marker on the spacer
+// row so the user sees where the window will land before releasing.
+func TestViewShowsDropMarkerWhileDragging(t *testing.T) {
+	a, _, _ := dragApp()
+	src := rowIndex(t, a, RowWindow, "1:api")
+	dst := rowIndex(t, a, RowAgent, "third")
+	if strings.Contains(a.View(), "▾") {
+		t.Fatal("no marker before any drag")
+	}
+	a.Update(press(src))
+	a.Update(motion(dst))
+	lines := strings.Split(a.View(), "\n")
+	// the gap after window 3 is the footer row (last line)
+	if !strings.Contains(lines[len(lines)-1], "▾") {
+		t.Errorf("marker missing on the target gap row: %q", lines[len(lines)-1])
+	}
+	a.Update(release(dst))
+	if strings.Contains(a.View(), "▾") {
+		t.Error("marker must clear after release")
+	}
+}

@@ -372,8 +372,8 @@ func TestRenderFooterOmitsReadOnly(t *testing.T) {
 	if footer.Kind != RowFooter {
 		t.Fatalf("last row kind = %v, want footer", footer.Kind)
 	}
-	if footer.Text != "C-t a jump · click jump" {
-		t.Errorf("footer = %q, want %q", footer.Text, "C-t a jump · click jump")
+	if footer.Text != "C-t a jump · click jump · drag reorder" {
+		t.Errorf("footer = %q, want %q", footer.Text, "C-t a jump · click jump · drag reorder")
 	}
 }
 
@@ -525,4 +525,44 @@ func TestRenderPopupAlertHintsPlainA(t *testing.T) {
 		}
 	}
 	t.Fatal("no alert row")
+}
+
+// Window, hang and subagent rows carry their window identity so the app
+// can resolve drag sources and drop gaps without a pane-id lookup; the
+// session rule carries the session for the "before first window" gap.
+func TestRenderRowsCarryWindowIdentity(t *testing.T) {
+	ag := mk("main", 7, "api", 1, "", detect.Idle, t0)
+	ag.Subagents = []detect.Subagent{{Type: "general-purpose", Title: "x"}}
+	rows := Render(ViewData{Agents: []state.Agent{ag}, Now: t0})
+	seen := map[RowKind]bool{}
+	for _, r := range rows {
+		switch r.Kind {
+		case RowWindow, RowAgent, RowSubagent:
+			if r.Session != "main" || r.WindowIndex != 7 {
+				t.Errorf("%v row must carry main:7, got %q:%d", r.Kind, r.Session, r.WindowIndex)
+			}
+			seen[r.Kind] = true
+		case RowGroup:
+			if r.Session != "main" {
+				t.Errorf("group row must carry the session, got %q", r.Session)
+			}
+			seen[r.Kind] = true
+		default:
+			if r.Session != "" {
+				t.Errorf("%v row must not carry a session: %+v", r.Kind, r)
+			}
+		}
+	}
+	for _, k := range []RowKind{RowGroup, RowWindow, RowAgent, RowSubagent} {
+		if !seen[k] {
+			t.Errorf("no %v row rendered", k)
+		}
+	}
+}
+
+func TestRenderFooterHintsDragReorder(t *testing.T) {
+	rows := Render(ViewData{Agents: testAgents(), FoldHidden: true, HiddenPrefix: "_", Now: t0})
+	if footer := rows[len(rows)-1]; footer.Text != "C-t a jump · click jump · drag reorder" {
+		t.Errorf("footer = %q", footer.Text)
+	}
 }

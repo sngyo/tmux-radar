@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,10 @@ var currentBg = lipgloss.Color("236")
 // pendingStyle grays out agents whose pane title carries the [PENDING]
 // marker: parked on purpose, so no working green and no bold.
 var pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
+
+// dropMarkerStyle paints the insertion line shown while dragging a window
+// block: amber so it reads against every row color.
+var dropMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
 
 // selectionBg marks the popup's keyboard selection; brighter than the
 // focused-window band so the cursor reads on top of it.
@@ -94,6 +99,27 @@ type App struct {
 	seeded         bool       // popup: initial selection was placed after the first good poll
 	origin         tmux.Focus // where the client was before popup browsing began
 	jump           func(session string, windowIndex int, paneID string) error
+	moveWindow     func(session string, src, dst int, after bool) error
+	drag           *dragState // sidebar: a left button is held on a window block
+}
+
+// dragState tracks a window block being dragged with the mouse.
+type dragState struct {
+	session string
+	window  int        // source window index
+	target  dropTarget // where a release would put it; refreshed on motion
+}
+
+// dropTarget is a gap between window blocks: "after window `window`", or
+// "before it" when after is false (the session's first window). row is the
+// screen line the marker is drawn on. ok is false when the cursor is over
+// no usable gap (another session, or a gap adjacent to the source).
+type dropTarget struct {
+	session string
+	window  int
+	after   bool
+	row     int
+	ok      bool
 }
 
 // NewApp builds the sidebar model. focusReturnCmd, when non-empty, runs
@@ -114,6 +140,14 @@ func NewApp(deps poller.Deps, focusReturnCmd, hiddenPrefix string, interval time
 	snap, _ := state.Load(state.DefaultPath())
 	return &App{deps: deps, focusReturnCmd: focusReturnCmd, hiddenPrefix: hiddenPrefix,
 		interval: interval, fold: true, popup: popup, snap: snap}
+}
+
+// moveWindowTo reorders a window via the injected hook (tests) or the real tmux.
+func (a *App) moveWindowTo(session string, src, dst int, after bool) error {
+	if a.moveWindow != nil {
+		return a.moveWindow(session, src, dst, after)
+	}
+	return tmux.MoveWindow(session, src, dst, after)
 }
 
 // jumpTo focuses a pane via the injected hook (tests) or the real tmux.
@@ -244,11 +278,122 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
-		if m.Action == tea.MouseActionRelease && m.Button == tea.MouseButtonLeft {
-			return a, a.click(m.Y)
+		if m.Button != tea.MouseButtonLeft {
+			return a, nil
+		}
+		switch m.Action {
+		case tea.MouseActionPress:
+			a.drag = a.startDrag(m.Y)
+		case tea.MouseActionMotion:
+			if a.drag != nil {
+				a.drag.target = a.dropTargetAt(m.Y)
+			}
+		case tea.MouseActionRelease:
+			drag := a.drag
+			if drag == nil || (a.rowWindow(m.Y) == drag.session+":"+strconv.Itoa(drag.window)) {
+				a.drag = nil
+				return a, a.click(m.Y) // no drag, or released on the source block
+			}
+			t := a.dropTargetAt(m.Y) // needs a.drag for the session/adjacency checks
+			a.drag = nil
+			if t.ok {
+				if err := a.moveWindowTo(t.session, drag.window, t.window, t.after); err == nil && !a.inFlight {
+					a.inFlight = true
+					return a, a.poll() // show the new order without waiting for the tick
+				}
+			}
 		}
 	}
 	return a, nil
+}
+
+// rowWindow keys the window a screen line belongs to ("session:index"),
+// or "" for rows outside any window block.
+func (a *App) rowWindow(y int) string {
+	if y < 0 || y >= len(a.rows) {
+		return ""
+	}
+	r := a.rows[y]
+	if r.Kind != RowWindow && r.Kind != RowAgent && r.Kind != RowSubagent {
+		return ""
+	}
+	return r.Session + ":" + strconv.Itoa(r.WindowIndex)
+}
+
+// startDrag arms a drag when the press lands on a window block. The popup
+// never drags: it is one-shot and a click there jumps and closes.
+func (a *App) startDrag(y int) *dragState {
+	if a.popup || a.rowWindow(y) == "" {
+		return nil
+	}
+	r := a.rows[y]
+	return &dragState{session: r.Session, window: r.WindowIndex}
+}
+
+// dropTargetAt maps a cursor line to the nearest gap between window blocks
+// (ties go to the gap above). Gaps are: the session rule ("before the
+// session's first window") and the row right after each block's last
+// row — a spacer, the next session rule, the fold row or the footer
+// ("after that window"). Only gaps in the source's session count, and the
+// two gaps hugging the source block are no-ops.
+func (a *App) dropTargetAt(y int) dropTarget {
+	if a.drag == nil {
+		return dropTarget{}
+	}
+	var gaps []dropTarget
+	for i, r := range a.rows {
+		switch r.Kind {
+		case RowGroup:
+			// resolved to the first window of the session once seen
+			if j := i + 1; j < len(a.rows) && a.rows[j].Kind == RowWindow {
+				gaps = append(gaps, dropTarget{session: r.Session, window: a.rows[j].WindowIndex, after: false, row: i})
+			}
+		case RowWindow, RowAgent, RowSubagent:
+			last := i+1 >= len(a.rows) || a.rows[i+1].Kind != RowAgent && a.rows[i+1].Kind != RowSubagent
+			if last {
+				gaps = append(gaps, dropTarget{session: r.Session, window: r.WindowIndex, after: true, row: i + 1})
+			}
+		}
+	}
+	best, bestDist := dropTarget{}, -1
+	for _, g := range gaps {
+		d := y - g.row
+		if d < 0 {
+			d = -d
+		}
+		if bestDist < 0 || d < bestDist {
+			best, bestDist = g, d
+		}
+	}
+	if bestDist < 0 || best.session != a.drag.session {
+		return dropTarget{}
+	}
+	// the gap right above or below the source leaves the order unchanged
+	if best.row == a.sourceTop()-1 || best.row == a.sourceBottom()+1 {
+		return dropTarget{}
+	}
+	best.ok = true
+	return best
+}
+
+// sourceTop / sourceBottom are the first and last screen lines of the
+// dragged block, or -2 (never adjacent to anything) when it is not on screen.
+func (a *App) sourceTop() int {
+	for i := range a.rows {
+		if a.rowWindow(i) == a.drag.session+":"+strconv.Itoa(a.drag.window) {
+			return i
+		}
+	}
+	return -2
+}
+
+func (a *App) sourceBottom() int {
+	for i := len(a.rows) - 1; i >= 0; i-- {
+		if a.rowWindow(i) == a.drag.session+":"+strconv.Itoa(a.drag.window) {
+			return i
+		}
+	}
+	return -2
 }
 
 // nearestPane picks the popup's initial selection: the visible agent row
@@ -355,6 +500,15 @@ func (a *App) click(y int) tea.Cmd {
 	return nil
 }
 
+// dropMarker draws the insertion line: "┄┄┄ ▾ ┄┄┄" stretched to the pane.
+func dropMarker(width int) string {
+	if width < 8 {
+		width = 24
+	}
+	side := strings.Repeat("┄", (width-3)/2)
+	return side + " ▾ " + side
+}
+
 func (a *App) View() string {
 	if a.err != nil {
 		return "tmux server not running…\nretrying every second (q to quit)\n"
@@ -394,6 +548,11 @@ func (a *App) View() string {
 		// background rows stretch their band across the pane
 		if (r.Kind == RowAlert || r.Current || selected) && a.width > 0 {
 			st = st.Width(a.width)
+		}
+		if a.drag != nil && a.drag.target.ok && a.drag.target.row == i {
+			// the insertion line replaces the gap row's own text; the row
+			// count stays put so the mouse mapping holds during the drag
+			text, st = dropMarker(a.width), dropMarkerStyle
 		}
 		if i > 0 {
 			out += "\n"

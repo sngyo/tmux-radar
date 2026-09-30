@@ -31,7 +31,7 @@ AGENTS                8 agents
   1:claude
  ○ └ ✳ [PENDING] parked task     ← [PENDING] titles are grayed out
 ▸ _hidden — 8 agents             ← fold; click to expand; shows ◆n if any
-C-t a jump · click jump
+C-t a jump · click jump · drag reorder
 ```
 
 ## Install
@@ -80,6 +80,14 @@ focused popup swallows the tmux prefix, so the usual prefix+`a` reflex
 still lands on this key). `enter` keeps the current selection and closes;
 `esc` returns to where you started and closes; a mouse click jumps and
 closes; `q` just closes.
+
+**Reordering windows** — in the sidebar (not the popup), press the mouse
+on a window block and drag it up or down: an amber `┄┄ ▾ ┄┄` line shows
+the gap it will land in ("after the window above", or before the
+session's first window when the marker sits on the session rule).
+Release to run `tmux move-window` — with `renumber-windows on` the
+window takes the next index and the rest shift. Drops stay inside the
+source session; dropping into another session does nothing.
 
 **Ghostty** (optional) — toggle the sidebar split's zoom with one key:
 
@@ -137,7 +145,7 @@ for 48h on startup, so closed panes' logs don't accumulate indefinitely.
 
 | Command | Description |
 |---|---|
-| `sidebar` | Runs the bubbletea sidebar TUI in the current terminal (the default when no subcommand is given). Polls tmux panes, renders the agent list, and supports mouse-click jump. `--popup` switches to the one-shot popup behavior described above. |
+| `sidebar` | Runs the bubbletea sidebar TUI in the current terminal (the default when no subcommand is given). Polls tmux panes, renders the agent list, and supports mouse-click jump and drag & drop window reordering (see Quick start). `--popup` switches to the one-shot popup behavior described above. |
 | `popup` | Opens `sidebar --popup` inside a `tmux display-popup` sized by `popup_width`/`popup_height`; the popup closes when the sidebar exits. |
 | `summary` | Prints a ready-to-render tmux status-line string (e.g. `◆1 ●3 ○2`) by reading the cached state; intended for `status-right`. Prints nothing if the state is stale or missing. |
 | `jump` | Switches the tmux client to the next agent needing attention (blocked agents first, then done agents, oldest first); repeated presses cycle through the queue. When nothing needs attention it falls back to touring the working agents (oldest first); only when nothing is working either does it show a status message and stay put. |

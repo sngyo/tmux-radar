@@ -133,6 +133,23 @@ func JumpTo(session string, windowIndex int, paneID string) error {
 	).Run()
 }
 
+// MoveWindow reorders a window within its session: after=true inserts it
+// right after dst, otherwise right before. tmux shifts the windows in
+// between (and compacts indexes when renumber-windows is on).
+func MoveWindow(session string, src, dst int, after bool) error {
+	return exec.Command("tmux", moveWindowArgs(session, src, dst, after)...).Run()
+}
+
+func moveWindowArgs(session string, src, dst int, after bool) []string {
+	flag := "-b"
+	if after {
+		flag = "-a"
+	}
+	return []string{"move-window", flag,
+		"-s", fmt.Sprintf("%s:%d", session, src),
+		"-t", fmt.Sprintf("%s:%d", session, dst)}
+}
+
 // DisplayMessage shows a transient message in the tmux status line.
 func DisplayMessage(msg string) error {
 	return exec.Command("tmux", "display-message", msg).Run()
