@@ -40,6 +40,26 @@ func TestLoadPartialFileMergesDefaults(t *testing.T) {
 	if c.HiddenPrefix != "_" {
 		t.Errorf("default lost: %+v", c)
 	}
+	if c.PendingStyle != poller.DefaultPendingStyle {
+		t.Errorf("pending_style default lost: %q", c.PendingStyle)
+	}
+}
+
+func TestLoadEmptyPendingStyleDisablesDim(t *testing.T) {
+	c, err := Load(write(t, "pending_style = \"\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PendingStyle != "" {
+		t.Errorf("explicit empty pending_style must be kept, got %q", c.PendingStyle)
+	}
+	deps, err := c.PollerDeps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deps.PendingStyle != "" {
+		t.Errorf("PollerDeps.PendingStyle = %q, want empty", deps.PendingStyle)
+	}
 }
 
 func TestLoadMalformedFallsBackWithError(t *testing.T) {

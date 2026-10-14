@@ -165,6 +165,7 @@ hidden_prefix    = "_"
 focus_return_cmd = ""   # e.g. "hs -c 'focusTmuxSplit()'"
 popup_width      = "60%" # tmux display-popup geometry: cells or "N%"
 popup_height     = "60%"
+pending_style    = "fg=#5d6e76,bg=#121a1f" # tmux style for [PENDING] panes; "" disables
 
 [agents.claude]
 # Regexes matched against pane_current_command. Claude Code's auto-updater
@@ -194,6 +195,11 @@ blocked  = ['(?m)^› \d+\. ', '(?m)^\s*Press enter to (confirm|continue)\b']
 - `popup_width` / `popup_height` — the `tmux-radar popup` window geometry,
   passed straight to `display-popup -w/-h`: a cell count (`"120"`) or a
   percentage of the client (`"60%"`). Defaults to a landscape 60% × 60%.
+- `pending_style` — tmux style applied to panes whose title contains
+  `[PENDING]`; `""` disables the dim and clears any dim already applied.
+  tmux has no title-change hook (and format-based `window-style` is cached
+  until the option is re-set), so the poller reconciles it each tick and
+  records the applied style in the `@radar_dim` pane option.
 - `[agents.claude]` / `[agents.codex]` — per-agent detection rules, applied
   only to panes recognized as that agent (a codex pane is never judged by
   claude patterns and vice versa). A partial override (e.g. a config that
@@ -228,7 +234,12 @@ Extras layered on top:
   (`⏺ main` + task rows), those tasks are scraped and nested one level below
   the pane's row. An unrecognized layout simply shows no subagents.
 - **`[PENDING]` marker** — put `[PENDING]` anywhere in a pane title to gray
-  the row out (parked on purpose; still tracked, just visually muted).
+  the row out (parked on purpose; still tracked, just visually muted). The
+  pane itself is dimmed too (any pane, agent or not), via per-pane
+  `window-style` / `window-active-style` set by the running sidebar/watch
+  poller within one tick; removing the marker restores the inherited style.
+  Only default-coloured text and the background change — text an app
+  colours explicitly keeps its colour. Style it with `pending_style`.
 
 ## License
 

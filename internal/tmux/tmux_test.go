@@ -7,15 +7,15 @@ import (
 )
 
 func TestParsePanes(t *testing.T) {
-	out := "%37\tmain\t14\tapi\t2\treviewer\tclaude\t4242\n" +
-		"%12\tmain\t11\tweb\t1\t\tzsh\t77\n"
+	out := "%37\tmain\t14\tapi\t2\treviewer\tclaude\t4242\tfg=grey\n" +
+		"%12\tmain\t11\tweb\t1\t\tzsh\t77\t\n"
 	got, err := ParsePanes(out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Pane{
 		{ID: "%37", Session: "main", WindowIndex: 14, WindowName: "api",
-			PaneIndex: 2, Title: "reviewer", Command: "claude", PID: 4242},
+			PaneIndex: 2, Title: "reviewer", Command: "claude", PID: 4242, DimStyle: "fg=grey"},
 		{ID: "%12", Session: "main", WindowIndex: 11, WindowName: "web",
 			PaneIndex: 1, Title: "", Command: "zsh", PID: 77},
 	}
@@ -24,8 +24,45 @@ func TestParsePanes(t *testing.T) {
 	}
 }
 
+func TestIsPending(t *testing.T) {
+	for title, want := range map[string]bool{
+		"[PENDING] parked":  true,
+		"✳ [pending] later": true,
+		"PENDING no braces": false,
+		"":                  false,
+	} {
+		if got := IsPending(title); got != want {
+			t.Errorf("IsPending(%q) = %v, want %v", title, got, want)
+		}
+	}
+}
+
+func TestPaneDimArgsSetsBothStylesAndMarker(t *testing.T) {
+	got := paneDimArgs("%3", "fg=grey")
+	want := []string{
+		"set-option", "-p", "-t", "%3", "window-style", "fg=grey", ";",
+		"set-option", "-p", "-t", "%3", "window-active-style", "fg=grey", ";",
+		"set-option", "-p", "-t", "%3", "@radar_dim", "fg=grey",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestPaneDimArgsEmptyStyleUnsets(t *testing.T) {
+	got := paneDimArgs("%3", "")
+	want := []string{
+		"set-option", "-pu", "-t", "%3", "window-style", ";",
+		"set-option", "-pu", "-t", "%3", "window-active-style", ";",
+		"set-option", "-pu", "-t", "%3", "@radar_dim",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
 func TestParsePanesSkipsMalformedLines(t *testing.T) {
-	got, err := ParsePanes("garbage-without-tabs\n%1\tmain\t1\tapi\t1\t\tclaude\t99\n")
+	got, err := ParsePanes("garbage-without-tabs\n%1\tmain\t1\tapi\t1\t\tclaude\t99\t\n")
 	if err != nil {
 		t.Fatal(err)
 	}

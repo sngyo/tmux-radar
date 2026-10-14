@@ -411,3 +411,57 @@ func TestRunOnceScrapesSubagents(t *testing.T) {
 		t.Errorf("agent state = %s, want working", s.Agents[0].State)
 	}
 }
+
+// [PENDING] dims any pane (agent or not); only panes whose recorded dim
+// differs from the wanted one are touched, so a steady state is call-free.
+func TestRunOnceSyncsPendingDim(t *testing.T) {
+	calls := map[string]string{}
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{
+				{ID: "%1", Command: "claude", Title: "✳ [PENDING] parked"},           // needs dim
+				{ID: "%2", Command: "zsh", Title: "[pending] shell"},                 // non-agent, needs dim
+				{ID: "%3", Command: "zsh", Title: "[PENDING] done", DimStyle: "dim"}, // already dimmed
+				{ID: "%4", Command: "zsh", Title: "resumed", DimStyle: "dim"},        // needs clear
+				{ID: "%5", Command: "zsh", Title: "plain"},                           // untouched
+				{ID: "%6", Command: "zsh", Title: "[PENDING] old", DimStyle: "old"},  // restyle
+			}, nil
+		},
+		Capture:      func(string) (string, error) { return "idle prompt", nil },
+		Kinds:        claudeOnlyKinds(),
+		PendingStyle: "dim",
+		SetPaneDim: func(id, style string) error {
+			calls[id] = style
+			return nil
+		},
+	}
+	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"%1": "dim", "%2": "dim", "%4": "", "%6": "dim"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("SetPaneDim calls = %v, want %v", calls, want)
+	}
+}
+
+// An empty PendingStyle disables the feature and clears dims applied before.
+func TestRunOnceEmptyPendingStyleClearsDim(t *testing.T) {
+	calls := map[string]string{}
+	d := Deps{
+		ListPanes: func() ([]tmux.Pane, error) {
+			return []tmux.Pane{
+				{ID: "%1", Command: "zsh", Title: "[PENDING] a", DimStyle: "dim"},
+				{ID: "%2", Command: "zsh", Title: "[PENDING] b"},
+			}, nil
+		},
+		Capture:    func(string) (string, error) { return "", nil },
+		Kinds:      claudeOnlyKinds(),
+		SetPaneDim: func(id, style string) error { calls[id] = style; return nil },
+	}
+	if _, err := RunOnce(state.Snapshot{}, d, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"%1": ""}; !reflect.DeepEqual(calls, want) {
+		t.Errorf("SetPaneDim calls = %v, want %v", calls, want)
+	}
+}

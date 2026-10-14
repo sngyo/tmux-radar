@@ -50,7 +50,18 @@ type Deps struct {
 	// pane tmux no longer lists is gone and its log is dead weight that can
 	// pin a reused pane id "working".
 	GCHookEvents func(alive map[string]bool)
+	// SetPaneDim applies (style != "") or clears (style == "") the dim on a
+	// pane (nil: disabled). Every listed pane is reconciled each tick, not
+	// just agents: [PENDING] parks any pane.
+	SetPaneDim func(paneID, style string) error
+	// PendingStyle is the tmux style for [PENDING] panes; "" disables the
+	// dim (and clears any dim radar applied earlier).
+	PendingStyle string
 }
+
+// DefaultPendingStyle dims a [PENDING] pane: blue-gray default text on a
+// dark blue-gray background, so a parked pane reads as "on hold".
+const DefaultPendingStyle = "fg=#5d6e76,bg=#121a1f"
 
 // DefaultProcessPatterns matches Claude Code binaries: the plain name plus
 // the version-named binaries its auto-updater installs (e.g. "2.1.199").
@@ -90,6 +101,8 @@ func DefaultDeps() Deps {
 		Kinds:           DefaultKinds(),
 		PaneDescendants: proc.DescendantNames,
 		CurrentFocus:    tmux.CurrentFocus,
+		SetPaneDim:      tmux.SetPaneDim,
+		PendingStyle:    DefaultPendingStyle,
 		HookWorking: func(paneID string) bool {
 			evs, err := hookevents.ReadPane(hookevents.DefaultDir(), paneID)
 			if err != nil {
@@ -118,6 +131,9 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 			alive[p.ID] = true
 		}
 		d.GCHookEvents(alive)
+	}
+	if d.SetPaneDim != nil {
+		syncPendingDim(panes, d)
 	}
 	kinds := resolveKinds(panes, d)
 	var obs []state.Observation
@@ -171,6 +187,21 @@ func RunOnce(prev state.Snapshot, d Deps, now time.Time) (state.Snapshot, error)
 		}
 	}
 	return next, nil
+}
+
+// syncPendingDim makes each pane's applied dim match its title. Only panes
+// whose recorded style differs are touched, so a steady state costs no tmux
+// calls. A failed set is retried on the next tick (the record is unchanged).
+func syncPendingDim(panes []tmux.Pane, d Deps) {
+	for _, p := range panes {
+		want := ""
+		if tmux.IsPending(p.Title) {
+			want = d.PendingStyle
+		}
+		if want != p.DimStyle {
+			_ = d.SetPaneDim(p.ID, want)
+		}
+	}
 }
 
 // resolveKinds classifies each pane: pane_current_command first, then one

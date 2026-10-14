@@ -31,6 +31,9 @@ type Config struct {
 	// popup geometry, passed to tmux display-popup -w/-h (cells or "N%")
 	PopupWidth  string `toml:"popup_width"`
 	PopupHeight string `toml:"popup_height"`
+	// PendingStyle dims [PENDING] panes (a tmux style string); explicitly
+	// setting "" disables the dim (kept verbatim, not defaulted).
+	PendingStyle string `toml:"pending_style"`
 }
 
 // Default returns the compiled-in configuration.
@@ -39,8 +42,9 @@ func Default() Config {
 		PollIntervalMS: 1000,
 		HiddenPrefix:   "_",
 		// landscape: wide enough for full pane titles, short enough to float
-		PopupWidth:  "60%",
-		PopupHeight: "60%",
+		PopupWidth:   "60%",
+		PopupHeight:  "60%",
+		PendingStyle: poller.DefaultPendingStyle,
 		Agents: map[string]AgentRules{
 			// Single source of truth: pattern strings live in detect/poller.
 			"claude": {
@@ -166,5 +170,6 @@ func (c Config) PollerDeps() (poller.Deps, error) {
 	}
 	deps := poller.DefaultDeps()
 	deps.Kinds = kinds
+	deps.PendingStyle = c.PendingStyle
 	return deps, nil
 }

@@ -18,10 +18,23 @@ type Pane struct {
 	Title       string // user- or app-set pane title ("" if unset)
 	Command     string // pane_current_command, e.g. "claude"
 	PID         int    // pane_pid: the pane's root process (usually the shell)
+	// DimStyle is the style radar last applied to this pane for the
+	// [PENDING] dim ("" if none), read back from the @radar_dim pane option
+	// so reconciliation stays correct across radar restarts.
+	DimStyle string
+}
+
+// PendingMarker parks a pane: a title containing it (case-insensitively)
+// grays the sidebar row out and dims the pane itself.
+const PendingMarker = "[PENDING]"
+
+// IsPending reports whether a pane title carries the PendingMarker.
+func IsPending(title string) bool {
+	return strings.Contains(strings.ToUpper(title), PendingMarker)
 }
 
 // panesFormat uses tabs as field separators; tmux names never sanely contain tabs.
-const panesFormat = "#{pane_id}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t#{pane_pid}"
+const panesFormat = "#{pane_id}\t#{session_name}\t#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t#{pane_pid}\t#{@radar_dim}"
 
 // ListPanes returns every pane on the local tmux server.
 func ListPanes() ([]Pane, error) {
@@ -37,7 +50,7 @@ func ParsePanes(out string) ([]Pane, error) {
 	var panes []Pane
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		f := strings.Split(line, "\t")
-		if len(f) != 8 {
+		if len(f) != 9 {
 			continue
 		}
 		wi, err1 := strconv.Atoi(f[2])
@@ -48,10 +61,33 @@ func ParsePanes(out string) ([]Pane, error) {
 		}
 		panes = append(panes, Pane{
 			ID: f[0], Session: f[1], WindowIndex: wi, WindowName: f[3],
-			PaneIndex: pi, Title: f[5], Command: f[6], PID: pid,
+			PaneIndex: pi, Title: f[5], Command: f[6], PID: pid, DimStyle: f[8],
 		})
 	}
 	return panes, nil
+}
+
+// SetPaneDim applies style to a pane's background/default colours (both
+// window-style and window-active-style, so the pane stays dimmed while
+// focused) and records it in @radar_dim; an empty style restores the
+// inherited styles. One tmux invocation per change.
+func SetPaneDim(paneID, style string) error {
+	return exec.Command("tmux", paneDimArgs(paneID, style)...).Run()
+}
+
+func paneDimArgs(paneID, style string) []string {
+	var args []string
+	for i, opt := range []string{"window-style", "window-active-style", "@radar_dim"} {
+		if i > 0 {
+			args = append(args, ";")
+		}
+		if style == "" {
+			args = append(args, "set-option", "-pu", "-t", paneID, opt)
+		} else {
+			args = append(args, "set-option", "-p", "-t", paneID, opt, style)
+		}
+	}
+	return args
 }
 
 // CapturePane returns the visible screen content of a pane as plain text.

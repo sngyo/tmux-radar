@@ -204,7 +204,7 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 			Text: fmt.Sprintf(" %s %s %s", icon, branch, truncate(title, labelW)),
 			Kind: RowAgent, Display: disp, PaneID: a.PaneID, Current: current,
 			Session: a.Session, WindowIndex: a.WindowIndex,
-			Pending: strings.Contains(strings.ToUpper(title), "[PENDING]"),
+			Pending: tmux.IsPending(title),
 		})
 		rows = append(rows, subagentRows(a, labelW, current, v.Frame)...)
 	}
