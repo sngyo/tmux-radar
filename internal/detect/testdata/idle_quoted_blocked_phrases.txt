@@ -1,0 +1,22 @@
+● README の state 表を確認します。
+
+  ⎿  $ sed -n 222,226p README.md
+     222  | State | Rule (defaults; regex list in config) |
+     223  |---|---|
+     224  | `working` | Claude Code: spinner line with an elapsed time |
+     225  | `blocked` | Permission / question UI detected. Claude Code: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts |
+     226  | `idle` | Agent process alive, none of the above |
+
+  ⎿  Would you like to keep the current approach or refactor?
+     ❯ 1. Keep current
+
+  残る未対応: 旧ビルド向けの esc to interrupt 生文字パターンも同じ引用リスクがある。
+  旧ビルドの spinner はこう見えた: ✶ Cerebrating… (12s · ↑ 2.3k tokens · esc to interrupt)
+  footer はこう: ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+
+✻ Cooked for 37s · done 21:29
+
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ⏵⏵ auto mode on (shift+tab to cycle)

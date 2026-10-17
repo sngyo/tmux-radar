@@ -33,6 +33,7 @@ func TestDetect(t *testing.T) {
 		{"blocked_question.txt", Blocked},
 		{"blocked_askquestion.txt", Blocked},
 		{"idle.txt", Idle},
+		{"idle_quoted_blocked_phrases.txt", Idle},
 	}
 	for _, c := range cases {
 		if got := r.Detect(fixture(t, c.file)); got != c.want {

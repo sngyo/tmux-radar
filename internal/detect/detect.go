@@ -27,9 +27,15 @@ type Rules struct {
 // so pattern changes land in one place and cannot drift.
 func DefaultWorkingPatterns() []string {
 	return []string{
-		// pre-2.1.2xx builds: the hint appears in the spinner line and the
-		// input-box mode line while a turn runs
-		`esc to interrupt`,
+		// pre-2.1.2xx builds: the hint appears in the spinner line
+		// ("✶ Cerebrating… (12s · ↑ 2.3k tokens · esc to interrupt)") and
+		// in the input-box mode line ("  ⏵⏵ auto mode on (…) · esc to
+		// interrupt · ← for agents") while a turn runs. Both are anchored
+		// to their chrome — column-0 spinner glyph, or the "⏵⏵" mode
+		// marker — so the bare phrase quoted in conversation text or tool
+		// output (indented, no chrome) cannot keep an idle pane working.
+		`(?m)^[·✢*✳✶✻✽] \S.*\([^)]*esc to interrupt\)`,
+		`(?m)^\s{0,2}⏵⏵ .*· esc to interrupt\b`,
 		// 2.1.2xx dropped that hint everywhere, leaving the spinner line
 		// itself as the only working signal: "✻ Accomplishing… (1m 49s ·
 		// ↓ 5.3k tokens)". The parenthetical may lead with a stage note
@@ -51,14 +57,27 @@ func DefaultWorkingPatterns() []string {
 		// footer counts it ("· 1 monitor ·") whenever one is live. A monitor
 		// is not a background agent, so the wait line above never matches it.
 		`· \d+ monitors? ·`,
+		// Deliberately NOT a working signal: background shells ("· 2
+		// shells" in the footer, "2 shells still running" in the done
+		// line). They are often long polls (gh pr checks --watch, sleep
+		// loops) or dev servers, which would pin the pane working for
+		// minutes or forever; a turn that ends with shells pending reads
+		// as done instead, and the resumed turn shows up on its own.
 	}
 }
 
 func DefaultBlockedPatterns() []string {
 	return []string{
-		`Do you want`,
-		`❯ 1\.`,
-		`Would you like to`,
+		// Live prompts render at column 0, either bare ("Would you like to
+		// keep…" / "❯ 1. Keep current") or inside a full-width box whose
+		// left border is the first column ("│ Do you want to proceed?" /
+		// "│ ❯ 1. Yes"). The same phrases quoted in conversation or tool
+		// output are always indented (message text, "⎿" output, numbered
+		// file dumps), so anchoring to column 0 with an optional border
+		// keeps a README excerpt or a pasted dialog from reading as blocked.
+		`(?m)^(│ )?Do you want`,
+		`(?m)^(│ )?❯ 1\.`,
+		`(?m)^(│ )?Would you like to`,
 	}
 }
 

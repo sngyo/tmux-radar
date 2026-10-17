@@ -171,8 +171,8 @@ pending_style    = "fg=#5d6e76,bg=#121a1f" # tmux style for [PENDING] panes; "" 
 # Regexes matched against pane_current_command. Claude Code's auto-updater
 # installs version-named binaries ("2.1.199"), hence the version pattern.
 process_names = ['^claude$', '^[0-9]+\.[0-9]+\.[0-9]+$']
-working  = ['esc to interrupt', 'Waiting for \d+ background agents? to finish']
-blocked  = ['Do you want', '❯ 1\.', 'Would you like to']
+working  = ['(?m)^[·✢*✳✶✻✽] \S.*\([^)]*esc to interrupt\)', 'Waiting for \d+ background agents? to finish']
+blocked  = ['(?m)^(│ )?Do you want', '(?m)^(│ )?❯ 1\.', '(?m)^(│ )?Would you like to']
 
 [agents.codex]
 # The npm-installed Codex CLI runs as "node <shim>", so pane_current_command
@@ -221,8 +221,8 @@ blocked  = ['(?m)^› \d+\. ', '(?m)^\s*Press enter to (confirm|continue)\b']
 
 | State | Rule (defaults; regex list in config) |
 |---|---|
-| `working` | Claude Code: footer contains `esc to interrupt`, or the pane is waiting for background agents to finish. Codex: the `• Working (7s • esc to interrupt)` status line |
-| `blocked` | Permission / question UI detected. Claude Code: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome. Codex: `› 1.`-style approval/trust dialogs and their `Press enter to confirm` footer |
+| `working` | Claude Code: spinner line with an elapsed time (or, on older builds, the `esc to interrupt` hint in the spinner line / `⏵⏵` mode line), or the pane is waiting for background agents, dynamic workflows, or monitors to finish (background shells are deliberately not counted: they are often long polls or dev servers). Codex: the `• Working (7s • esc to interrupt)` status line |
+| `blocked` | Permission / question UI detected. Claude Code: `Do you want to proceed?`, `❯ 1. Yes`, plan-approval prompts, AskUserQuestion chrome — all anchored to column 0 (optionally behind a `│` box border), so the same phrases quoted in indented output do not count. Codex: `› 1.`-style approval/trust dialogs and their `Press enter to confirm` footer |
 | `idle` | Agent process alive, none of the above |
 | `done` (overlay) | On a `working → idle` transition, armed as an unseen-completion marker. Displayed as `✓` until you visit the pane (C-t a / click), then plain `idle`. |
 
