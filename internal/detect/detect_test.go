@@ -34,6 +34,10 @@ func TestDetect(t *testing.T) {
 		{"blocked_askquestion.txt", Blocked},
 		{"idle.txt", Idle},
 		{"idle_quoted_blocked_phrases.txt", Idle},
+		// A user prompt that starts with a numbered list echoes as
+		// "❯ 1. …" at column 0, exactly like a dialog's selected option.
+		// The live input box below it proves no dialog owns the screen.
+		{"working_numbered_prompt_echo.txt", Working},
 	}
 	for _, c := range cases {
 		if got := r.Detect(fixture(t, c.file)); got != c.want {

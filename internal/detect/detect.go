@@ -91,6 +91,17 @@ func DefaultBlockedPatterns() []string {
 // footer is no longer last and the agent is not blocked.
 var askQuestionFooterRe = regexp.MustCompile(`^\s*Enter to select\b`)
 
+// liveInputRe matches an empty, live input box line: bare "❯ " on recent
+// Claude Code builds (the glyph is followed by a NO-BREAK SPACE, U+00A0,
+// which Go's \s does not cover), or "│ > │" inside the older bordered box.
+// Every Claude dialog (permission box, option list, AskUserQuestion card)
+// replaces the input box while it is open, so blocked phrases that sit ABOVE
+// a live input line belong to conversation history, not to a dialog. The
+// main offender is a user prompt starting with a numbered list, which Claude
+// Code echoes as "❯ 1. …" at column 0, indistinguishable from a dialog's
+// selected option.
+var liveInputRe = regexp.MustCompile(`^(│ )?[❯>][\s\x{00A0}]*(│[\s\x{00A0}]*)?$`)
+
 // DefaultCodexWorkingPatterns and DefaultCodexBlockedPatterns are the
 // canonical OpenAI Codex CLI screen patterns (captured from codex-cli
 // 0.150). Config defaults reuse these exact strings.
@@ -158,8 +169,10 @@ func (r Rules) Detect(screen string) State {
 	if askQuestionFooterRe.MatchString(lastNonBlankLine(screen)) {
 		return Blocked
 	}
+	// Only the region below the last live input line can hold a dialog.
+	dialogRegion := belowLiveInput(screen)
 	for _, re := range r.Blocked {
-		if re.MatchString(screen) {
+		if re.MatchString(dialogRegion) {
 			return Blocked
 		}
 	}
@@ -169,6 +182,18 @@ func (r Rules) Detect(screen string) State {
 		}
 	}
 	return Idle
+}
+
+// belowLiveInput returns the lines of s after the last live input line (see
+// liveInputRe), or s unchanged when no input box is on screen.
+func belowLiveInput(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if liveInputRe.MatchString(lines[i]) {
+			return strings.Join(lines[i+1:], "\n")
+		}
+	}
+	return s
 }
 
 // lastNonBlankLine returns the final line of s that has non-whitespace content
