@@ -240,6 +240,8 @@ Extras layered on top:
   poller within one tick; removing the marker restores the inherited style.
   Only default-coloured text and the background change — text an app
   colours explicitly keeps its colour. Style it with `pending_style`.
+  When every pane of a window is parked, the window's anchor row is parked
+  too: it reads `[PENDING] 18:name` and takes the same gray.
 
 ## License
 

@@ -566,3 +566,43 @@ func TestRenderFooterHintsDragReorder(t *testing.T) {
 		t.Errorf("footer = %q", footer.Text)
 	}
 }
+
+// A window whose panes are all [PENDING] is parked as a whole: its anchor
+// row carries the marker and is pending too. One live pane keeps the
+// window row plain.
+func TestRenderMarksWindowPendingWhenAllPanesPending(t *testing.T) {
+	agents := []state.Agent{
+		mk("main", 18, "pm", 1, "✳ [PENDING] review digest", detect.Idle, t0),
+		mk("main", 18, "pm", 2, "[pending] SaaS docs", detect.Idle, t0),
+		mk("main", 19, "mixed", 1, "✳ [PENDING] parked", detect.Idle, t0),
+		mk("main", 19, "mixed", 2, "✳ live work", detect.Working, t0),
+	}
+	rows := Render(ViewData{Agents: agents, FoldHidden: true, HiddenPrefix: "_", Now: t0, Width: 60})
+	var parked, mixed *Row
+	for i := range rows {
+		if rows[i].Kind != RowWindow {
+			continue
+		}
+		switch rows[i].WindowIndex {
+		case 18:
+			parked = &rows[i]
+		case 19:
+			mixed = &rows[i]
+		}
+	}
+	if parked == nil || mixed == nil {
+		t.Fatalf("expected window rows for 18 and 19, got %v", kinds(rows))
+	}
+	if !parked.Pending {
+		t.Errorf("all-pending window row must be pending: %+v", *parked)
+	}
+	if want := "  [PENDING] 18:pm"; parked.Text != want {
+		t.Errorf("window text = %q, want %q", parked.Text, want)
+	}
+	if mixed.Pending {
+		t.Errorf("window with a live pane must not be pending: %+v", *mixed)
+	}
+	if strings.Contains(mixed.Text, "PENDING") {
+		t.Errorf("window with a live pane must not carry the marker: %q", mixed.Text)
+	}
+}

@@ -711,3 +711,30 @@ func TestViewShowsDropMarkerWhileDragging(t *testing.T) {
 		t.Error("marker must clear after release")
 	}
 }
+
+func TestViewGraysOutAllPendingWindowRow(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	a := &App{width: 60, snap: state.Snapshot{Agents: []state.Agent{
+		mk("main", 18, "pm", 1, "✳ [PENDING] review digest", detect.Idle, t0),
+		mk("main", 18, "pm", 2, "✳ [PENDING] SaaS docs", detect.Idle, t0),
+	}}}
+	var windowLine string
+	for _, line := range strings.Split(a.View(), "\n") {
+		if strings.Contains(line, "18:pm") {
+			windowLine = line
+		}
+	}
+	if windowLine == "" {
+		t.Fatal("expected the 18:pm window row")
+	}
+	if !strings.Contains(windowLine, "[PENDING] 18:pm") {
+		t.Errorf("window row must carry the marker: %q", windowLine)
+	}
+	if !strings.Contains(windowLine, "38;5;242") {
+		t.Errorf("all-pending window row must be gray (fg 242): %q", windowLine)
+	}
+	if strings.Contains(windowLine, "38;5;250") {
+		t.Errorf("all-pending window row must drop the plain window colour: %q", windowLine)
+	}
+}

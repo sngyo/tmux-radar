@@ -44,7 +44,8 @@ const currentBar = "▎"
 var currentBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Background(currentBg)
 
 // pendingStyle grays out agents whose pane title carries the [PENDING]
-// marker: parked on purpose, so no working green and no bold.
+// marker, and window rows whose panes are all parked: no working green,
+// no bold.
 var pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
 
 // dropMarkerStyle paints the insertion line shown while dragging a window
@@ -538,9 +539,9 @@ func (a *App) View() string {
 		st := styles[r.Kind]
 		if r.Kind == RowAgent {
 			st = displayStyles[r.Display]
-			if r.Pending {
-				st = pendingStyle
-			}
+		}
+		if r.Pending {
+			st = pendingStyle
 		}
 		if r.Current {
 			st = st.Background(currentBg)

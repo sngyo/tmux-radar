@@ -42,7 +42,7 @@ type Row struct {
 	WindowIndex int
 	ToggleFold  bool // set on RowFold
 	Current     bool // row belongs to the attached client's active window
-	Pending     bool // pane title carries the [PENDING] marker: gray the row out
+	Pending     bool // [PENDING]: pane title carries the marker, or every pane of the window does
 }
 
 // ViewData is everything Render needs. Now is injected for testability.
@@ -180,9 +180,15 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 		windowKey := fmt.Sprintf("%s:%d", session, a.WindowIndex)
 		if windowKey != prevWindow {
 			winLabel := fmt.Sprintf("%d:%s", a.WindowIndex, sanitize(a.WindowName))
+			// a window whose panes are all parked is parked as a whole
+			parked := allPending(agents[i:], a)
+			if parked {
+				winLabel = tmux.PendingMarker + " " + winLabel
+			}
 			rows = appendSpaced(rows, Row{
 				Text: "  " + truncate(winLabel, labelW+3), Kind: RowWindow, PaneID: a.PaneID,
 				Current: current, Session: a.Session, WindowIndex: a.WindowIndex,
+				Pending: parked,
 			})
 			prevWindow = windowKey
 		}
@@ -209,6 +215,21 @@ func agentRows(agents []state.Agent, v ViewData, labelW int) []Row {
 		rows = append(rows, subagentRows(a, labelW, current, v.Frame)...)
 	}
 	return rows
+}
+
+// allPending reports whether every pane of first's window carries the
+// [PENDING] marker. rest is the sorted agent slice starting at first, so
+// the window's panes are the leading run sharing its session and index.
+func allPending(rest []state.Agent, first state.Agent) bool {
+	for _, a := range rest {
+		if a.Session != first.Session || a.WindowIndex != first.WindowIndex {
+			break
+		}
+		if !tmux.IsPending(a.PaneTitle) {
+			return false
+		}
+	}
+	return true
 }
 
 // subagentRows nests an agent's scraped background tasks one level deeper
